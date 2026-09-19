@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Donate | DCP UK</title>
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<header class="navbar">
+  <div class="container">
+    <a href="index.html" class="brand">DCP<span class="accent">UK</span></a>
+    <input type="checkbox" id="nav-toggle" class="nav-toggle-checkbox">
+    <label for="nav-toggle" class="nav-toggle-btn" aria-label="Open menu">&#9776;</label>
+    <nav class="nav-links" id="site-nav">
+      <a href="index.html">HOME</a>
+      <a href="membership.html">MEMBERSHIP</a>
+      <a href="about.html">ABOUT DCP</a>
+      <a href="leadership.html">LEADERSHIP</a>
+      <a href="priorities.html">PRIORITIES</a>
+      <a href="chapters.html">UK CHAPTERS</a>
+      <a href="news.html">NEWS</a>
+      <a href="events.html">EVENTS</a>
+      <a href="documents.html">DOCUMENTS</a>
+      <a href="contact.html">CONTACT</a>
+      <a href="donate.html" class="btn btn-dark btn-sm">DONATE</a>
+      <a href="membership.html" class="btn btn-accent btn-sm">REGISTER &#8594;</a>
+      <a href="/admin/" class="btn btn-outline-dark btn-sm" title="Admin login">LOGIN</a>
+    </nav>
+  </div>
+</header>
+<section class="page-hero">
+  <div class="container">
+    <p class="breadcrumb"><a href="index.html">Home</a> / Donate</p>
+    <h1>Support DCP UK</h1>
+    <p>Fund the chapter's own UK activities &mdash; town halls, listening sessions and outreach to Kenyans across Britain.</p>
+  </div>
+</section>
+<section class="section section-light">
+  <div class="container">
+    <div class="feature-split" style="align-items:flex-start;grid-template-columns:1.2fr 1fr;">
+      <form class="form-card" id="donate-form" novalidate>
+        <div class="form-alert" role="alert" hidden></div>
+
+        <div data-panel="form">
+          <h3 style="margin-top:0;">Make a donation</h3>
+          <p style="color:var(--text-on-light-muted);font-size:14px;margin-top:-8px;">This is separate from the one-time KES <span data-fee-amount>100</span> <a href="membership.html" style="color:var(--accent);font-weight:600;">membership registration fee</a> paid to the national party. Donations here support the UK chapter's own running costs &mdash; venue hire for town halls, travel for chapter volunteers, printing and outreach materials.</p>
+
+          <div class="toggle-row" role="group" aria-label="Donation frequency">
+            <button type="button" class="selected" data-frequency="one_off" aria-pressed="true">One-off</button>
+            <button type="button" data-frequency="monthly" aria-pressed="false">Monthly</button>
+          </div>
+
+          <div class="amount-grid" role="group" aria-label="Donation amount">
+            <button type="button" class="amount-btn" data-amount="10" aria-pressed="false">&pound;10</button>
+            <button type="button" class="amount-btn selected" data-amount="25" aria-pressed="true">&pound;25</button>
+            <button type="button" class="amount-btn" data-amount="50" aria-pressed="false">&pound;50</button>
+            <button type="button" class="amount-btn" data-amount="100" aria-pressed="false">&pound;100</button>
+          </div>
+          <div class="field full" style="margin-bottom:20px;"><label for="d-custom">Or enter a different amount (GBP)</label><input id="d-custom" name="amountGbp" type="number" min="1" max="10000" step="0.01" placeholder="e.g. 35"></div>
+
+          <div class="form-grid">
+            <div class="field"><label for="d-name">Full name *</label><input id="d-name" name="fullName" type="text" autocomplete="name" required></div>
+            <div class="field"><label for="d-email">Email address *</label><input id="d-email" name="email" type="email" autocomplete="email" required></div>
+            <div class="field full"><label for="d-message">Message to the chapter (optional)</label><textarea id="d-message" name="message" maxlength="1000" placeholder="Let us know if this supports a specific chapter or activity"></textarea></div>
+            <label class="field full checkbox-field" data-field="acknowledged"><input type="checkbox" name="acknowledged" style="width:auto;margin-top:3px;"><span>I understand this donation supports DCP UK's own chapter activities, and is separate from party membership.</span></label>
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn-accent">Get bank transfer details &#8594;</button>
+          </div>
+          <div class="notice-box" style="margin-top:20px;"><strong>How donations are paid.</strong> Donations are made by bank transfer straight to the chapter's UK bank account. This page does not take card payments and never asks for your card or bank login details.</div>
+        </div>
+
+        <div data-panel="done" hidden>
+          <h3 style="margin-top:0;">Thank you for your support</h3>
+          <p style="font-size:14px;color:var(--text-on-light-muted);margin-top:0;" data-done-intro></p>
+          <dl class="pay-details" id="donation-details"></dl>
+          <p style="font-size:14px;color:var(--text-on-light-muted);" data-done-instructions hidden></p>
+          <p style="font-size:14px;color:var(--text-on-light-muted);">Please use the reference exactly as shown so the chapter can match your transfer to this pledge.</p>
+        </div>
+      </form>
+
+      <div>
+        <div class="simple-card" style="margin-bottom:16px;">
+          <h4>Where donations go</h4>
+          <p>Chapter-level costs only: UK town halls and listening sessions, travel for volunteer coordinators, printing, and member communications. Donations do not fund national party operations in Kenya &mdash; those are handled separately by the national party.</p>
+        </div>
+        <div class="simple-card">
+          <h4>Before this goes live</h4>
+          <p>DCP UK is not a UK-registered political party, so standard UK political-donation rules for registered parties may not directly apply &mdash; but receiving donations from the UK into a foreign political party's accounts can still raise its own compliance questions (e.g. anti-money-laundering checks, the payment provider's own rules on political organisations, and any Kenyan-side reporting requirements). This template doesn't attempt to answer that &mdash; it's worth the chapter checking with a qualified adviser before taking real donations.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-col">
+        <h5>Pages</h5>
+        <ul>
+          <li><a href="index.html">Home</a></li>
+          <li><a href="about.html">About DCP</a></li>
+          <li><a href="membership.html">Membership</a></li>
+          <li><a href="leadership.html">Leadership</a></li>
+          <li><a href="contact.html">Contact</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>Get Involved</h5>
+        <ul>
+          <li><a href="priorities.html">Priorities</a></li>
+          <li><a href="chapters.html">UK Chapters</a></li>
+          <li><a href="events.html">Events</a></li>
+          <li><a href="donate.html">Donate</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>Resources</h5>
+        <ul>
+          <li><a href="news.html">News</a></li>
+          <li><a href="documents.html">Documents</a></li>
+          <li><a href="https://dcp.or.ke" target="_blank" rel="noopener">DCP Kenya (national site)</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-legal">
+      DCP UK is the United Kingdom diaspora chapter of the Democracy for the Citizens Party, Kenya (registered 3 February 2025, Certificate No. 103).<br>
+      Not registered as a political party in the United Kingdom &middot; Does not stand candidates in UK elections &middot; Not affiliated with any UK political party.
+    </div>
+    <div class="footer-brand">DCP<span class="accent">UK</span></div>
+    <div class="footer-links">
+      <a href="documents.html">Privacy Policy</a>
+      <a href="contact.html">Data Requests</a>
+      <a href="https://dcp.or.ke" target="_blank" rel="noopener">National Party Site</a>
+    </div>
+  </div>
+</footer>
+<script src="assets/js/forms.js"></script>
+<script src="assets/js/donate.js"></script>
+<script src="assets/js/login.js"></script>
+</body>
+</html>

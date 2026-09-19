@@ -1,0 +1,17 @@
+node_modules/
+
+# Secrets: admin login and database password
+.env
+.env.*
+!.env.example
+
+# Old SQLite data and any local database dumps: personal data, never commit
+server/data/
+*.db
+*.sql
+*.csv
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+desktop.ini

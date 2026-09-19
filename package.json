@@ -1,0 +1,14 @@
+{
+  "name": "dcp-uk-reform-template",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DCP UK site (Reform-UK-structured reskin) with its backend: member registrations, donation pledges and the admin area.",
+  "scripts": {
+    "postinstall": "npm --prefix server install",
+    "start": "npm --prefix server start",
+    "create-admin": "npm --prefix server run create-admin --"
+  },
+  "engines": {
+    "node": ">=22.13"
+  }
+}

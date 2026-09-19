@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>DCP UK Admin</title>
+<link rel="stylesheet" href="/assets/css/style.css">
+<link rel="stylesheet" href="admin.css">
+</head>
+<body class="admin">
+<header class="navbar">
+  <div class="container">
+    <a href="/admin/" class="brand">DCP<span class="accent">UK</span> <span class="admin-tag">Admin</span></a>
+    <nav class="admin-nav" id="admin-nav" hidden>
+      <span class="who">Signed in as <strong id="who"></strong></span>
+      <a href="/" class="btn btn-outline-dark btn-sm" target="_blank" rel="noopener">View site</a>
+      <button type="button" class="btn btn-dark btn-sm" id="logout">Sign out</button>
+    </nav>
+  </div>
+</header>
+
+<main class="section section-tint admin-main">
+  <div class="container">
+
+    <!-- Signed out: the same compact box as the site's LOGIN popup -->
+    <section id="view-login" class="login-card-wrap" hidden>
+      <div class="login-modal login-card">
+        <form class="login-modal-form" id="login-form" novalidate>
+          <h2>Admin login</h2>
+          <div class="form-alert" role="alert" hidden></div>
+          <div class="field"><label for="l-user">Email</label><input id="l-user" name="username" type="email" autocomplete="username" required></div>
+          <div class="field"><label for="l-pass">Password</label><input id="l-pass" name="password" type="password" autocomplete="current-password" required></div>
+          <button class="btn btn-accent login-modal-submit" type="submit">Sign in</button>
+          <p class="login-back"><a href="/">&#8592; Back to the website</a></p>
+        </form>
+      </div>
+    </section>
+
+    <!-- Signed-in app -->
+    <section id="view-app" hidden>
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" data-tab="overview" class="selected">Overview</button>
+        <button type="button" role="tab" data-tab="members">Members</button>
+        <button type="button" role="tab" data-tab="donations">Donations</button>
+        <button type="button" role="tab" data-tab="accounts">Payment accounts</button>
+        <button type="button" role="tab" data-tab="users">Admin users</button>
+      </div>
+
+      <div data-panel="overview">
+        <div class="stat-cards" id="stats"></div>
+        <div class="notice-box" id="setup-reminder" hidden></div>
+      </div>
+
+      <div data-panel="members" hidden>
+        <div class="toolbar">
+          <input type="search" id="m-search" placeholder="Search name, email, phone, reference, ID number, postcode">
+          <select id="m-status"><option value="">All statuses</option><option value="pending">Pending review</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select>
+          <select id="m-payment"><option value="">All payments</option><option value="pending_payment">Not paid</option><option value="payment_reported">Reported paid (check)</option><option value="paid">Paid (confirmed)</option></select>
+          <select id="m-chapter"><option value="">All chapters</option><option>London</option><option>Manchester</option><option>Birmingham</option><option>Leeds</option><option>Glasgow</option><option>Cardiff</option><option>Nottingham</option><option>Belfast</option><option>None nearby</option></select>
+          <a class="btn btn-outline-light btn-sm" id="m-export" href="/api/admin/members.csv">Export CSV</a>
+        </div>
+        <div class="table-wrap">
+          <table class="dtable">
+            <thead><tr><th>Reference</th><th>Name</th><th>Contact</th><th>Chapter</th><th>Registered</th><th>Payment</th><th>Status</th></tr></thead>
+            <tbody id="members-body"></tbody>
+          </table>
+        </div>
+        <p class="muted" id="members-count"></p>
+      </div>
+
+      <div data-panel="donations" hidden>
+        <div class="toolbar">
+          <input type="search" id="d-search" placeholder="Search name, email or reference">
+          <select id="d-status"><option value="">All</option><option value="pledged">Pledged (awaiting transfer)</option><option value="received">Received</option><option value="cancelled">Cancelled</option></select>
+          <a class="btn btn-outline-light btn-sm" id="d-export" href="/api/admin/donations.csv">Export CSV</a>
+        </div>
+        <div class="table-wrap">
+          <table class="dtable">
+            <thead><tr><th>Reference</th><th>Donor</th><th>Amount</th><th>Pledged</th><th>Message</th><th>Status</th></tr></thead>
+            <tbody id="donations-body"></tbody>
+          </table>
+        </div>
+        <p class="muted" id="donations-count"></p>
+      </div>
+
+      <div data-panel="accounts" hidden>
+        <p class="muted panel-intro">These are the accounts shown to the public. Registration fees and donations are paid by the member or donor directly into these accounts; this site never handles the money. Double-check every digit before saving.</p>
+        <div class="account-grid">
+          <form class="form-card" id="fee-form" novalidate>
+            <h3>Membership fee account</h3>
+            <p class="muted">Where new members pay the one-time registration fee (shown on the Membership page).</p>
+            <div class="form-alert" role="alert" hidden></div>
+            <div class="form-grid">
+              <div class="field"><label for="f-amount">Fee amount (KES)</label><input id="f-amount" name="feeAmountKes" type="number" min="1" step="1" required></div>
+              <div class="field"><label for="f-method">Payment method</label>
+                <select id="f-method" name="method">
+                  <option value="mpesa_paybill">M-Pesa Paybill</option>
+                  <option value="mpesa_till">M-Pesa Till (Buy Goods)</option>
+                  <option value="bank">Bank transfer</option>
+                </select>
+              </div>
+              <div class="field full"><label for="f-name">Account / business name</label><input id="f-name" name="accountName"></div>
+              <div class="field" data-method="mpesa_paybill"><label for="f-paybill">Paybill (business) number</label><input id="f-paybill" name="paybillNumber" inputmode="numeric"><span class="hint">Members use their registration reference as the account number.</span></div>
+              <div class="field" data-method="mpesa_till"><label for="f-till">Till number</label><input id="f-till" name="tillNumber" inputmode="numeric"></div>
+              <div class="field" data-method="bank"><label for="f-bank">Bank name</label><input id="f-bank" name="bankName"></div>
+              <div class="field" data-method="bank"><label for="f-acct">Account number</label><input id="f-acct" name="accountNumber"></div>
+              <div class="field" data-method="bank"><label for="f-sort">Sort code (UK only)</label><input id="f-sort" name="sortCode" placeholder="12-34-56"></div>
+              <div class="field" data-method="bank"><label for="f-iban">IBAN</label><input id="f-iban" name="iban"></div>
+              <div class="field" data-method="bank"><label for="f-swift">SWIFT / BIC</label><input id="f-swift" name="swift"></div>
+              <div class="field full"><label for="f-instr">Extra instructions (optional)</label><textarea id="f-instr" name="instructions" maxlength="1000" placeholder="e.g. Paying from the UK? Use WorldRemit or Sendwave to the Paybill above."></textarea></div>
+            </div>
+            <p class="muted meta" data-meta></p>
+            <div class="form-actions"><button class="btn btn-accent btn-sm" type="submit">Save fee account</button></div>
+          </form>
+
+          <form class="form-card" id="donation-form" novalidate>
+            <h3>Donations bank account</h3>
+            <p class="muted">The UK bank account that receives donations (shown on the Donate page). Donations stay closed until this is saved.</p>
+            <div class="form-alert" role="alert" hidden></div>
+            <div class="form-grid">
+              <div class="field full"><label for="g-name">Account name</label><input id="g-name" name="accountName"></div>
+              <div class="field full"><label for="g-bank">Bank name</label><input id="g-bank" name="bankName"></div>
+              <div class="field"><label for="g-sort">Sort code</label><input id="g-sort" name="sortCode" placeholder="12-34-56"></div>
+              <div class="field"><label for="g-acct">Account number</label><input id="g-acct" name="accountNumber" inputmode="numeric" placeholder="8 digits"></div>
+              <div class="field"><label for="g-iban">IBAN (for international transfers)</label><input id="g-iban" name="iban"></div>
+              <div class="field"><label for="g-swift">SWIFT / BIC</label><input id="g-swift" name="swift"></div>
+              <div class="field full"><label for="g-instr">Extra instructions (optional)</label><textarea id="g-instr" name="instructions" maxlength="1000"></textarea></div>
+            </div>
+            <p class="muted meta" data-meta></p>
+            <div class="form-actions"><button class="btn btn-accent btn-sm" type="submit">Save donations account</button></div>
+          </form>
+        </div>
+      </div>
+
+      <div data-panel="users" hidden>
+        <div class="account-grid">
+          <form class="form-card" id="password-form" novalidate>
+            <h3>Change your password</h3>
+            <div class="form-alert" role="alert" hidden></div>
+            <div class="field"><label for="p-cur">Current password</label><input id="p-cur" name="currentPassword" type="password" autocomplete="current-password"></div>
+            <div class="field"><label for="p-new">New password<span class="hint">At least 10 characters. Signs you out everywhere else.</span></label><input id="p-new" name="newPassword" type="password" autocomplete="new-password"></div>
+            <div class="form-actions"><button class="btn btn-accent btn-sm" type="submit">Change password</button></div>
+          </form>
+          <form class="form-card" id="add-admin-form" novalidate>
+            <h3>Add another admin</h3>
+            <p class="muted">Every admin can see all member details and change the payment accounts.</p>
+            <div class="form-alert" role="alert" hidden></div>
+            <div class="field"><label for="a-user">Email</label><input id="a-user" name="username" type="email" autocomplete="off"></div>
+            <div class="field"><label for="a-pass">Temporary password</label><input id="a-pass" name="password" type="password" autocomplete="new-password"></div>
+            <div class="form-actions"><button class="btn btn-accent btn-sm" type="submit">Add admin</button></div>
+            <h4>Current admins</h4>
+            <ul id="admin-list" class="plain-list"></ul>
+          </form>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<dialog id="member-dialog" class="member-dialog">
+  <form method="dialog" class="dialog-close"><button class="btn btn-outline-light btn-sm" aria-label="Close">Close</button></form>
+  <h2 id="md-title"></h2>
+  <p class="muted" id="md-sub"></p>
+  <div class="form-alert" role="alert" hidden></div>
+  <p class="notice-box" id="md-dupe" hidden></p>
+  <dl class="pay-details" id="md-details"></dl>
+  <form id="md-form" novalidate>
+    <div class="form-grid">
+      <div class="field"><label for="md-status">Membership status</label>
+        <select id="md-status" name="status"><option value="pending">Pending review</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select></div>
+      <div class="field"><label for="md-payment">Fee payment</label>
+        <select id="md-payment" name="paymentStatus"><option value="pending_payment">Not paid</option><option value="payment_reported">Reported paid (check)</option><option value="paid">Paid (confirmed)</option></select></div>
+      <div class="field full"><label for="md-notes">Admin notes</label><textarea id="md-notes" name="adminNotes" maxlength="2000"></textarea></div>
+    </div>
+    <div class="form-actions spread">
+      <button type="button" class="btn btn-outline-light btn-sm danger" id="md-delete">Delete permanently</button>
+      <button type="submit" class="btn btn-accent btn-sm">Save changes</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="admin.js"></script>
+</body>
+</html>

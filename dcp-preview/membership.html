@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Membership | DCP UK</title>
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<header class="navbar">
+  <div class="container">
+    <a href="index.html" class="brand">DCP<span class="accent">UK</span></a>
+    <input type="checkbox" id="nav-toggle" class="nav-toggle-checkbox">
+    <label for="nav-toggle" class="nav-toggle-btn" aria-label="Open menu">&#9776;</label>
+    <nav class="nav-links" id="site-nav">
+      <a href="index.html">HOME</a>
+      <a href="membership.html" class="current">MEMBERSHIP</a>
+      <a href="about.html">ABOUT DCP</a>
+      <a href="leadership.html">LEADERSHIP</a>
+      <a href="priorities.html">PRIORITIES</a>
+      <a href="chapters.html">UK CHAPTERS</a>
+      <a href="news.html">NEWS</a>
+      <a href="events.html">EVENTS</a>
+      <a href="documents.html">DOCUMENTS</a>
+      <a href="contact.html">CONTACT</a>
+      <a href="donate.html" class="btn btn-dark btn-sm">DONATE</a>
+      <a href="membership.html" class="btn btn-accent btn-sm">REGISTER &#8594;</a>
+      <a href="/admin/" class="btn btn-outline-dark btn-sm" title="Admin login">LOGIN</a>
+    </nav>
+  </div>
+</header>
+<section class="page-hero">
+  <div class="container">
+    <p class="breadcrumb"><a href="index.html">Home</a> / Membership</p>
+    <h1>Become a DCP Member</h1>
+    <p>Five short steps. One-time registration fee of KES 100, set by the national party.</p>
+  </div>
+</section>
+<section class="section section-light">
+  <div class="container">
+    <div class="feature-split" style="align-items:flex-start;grid-template-columns:1.3fr 0.9fr;">
+      <div>
+        <div class="steps" id="membership-steps">
+          <div class="step active"><span class="num">1</span>Personal Details</div>
+          <div class="step"><span class="num">2</span>UK Address</div>
+          <div class="step"><span class="num">3</span>Declaration</div>
+          <div class="step"><span class="num">4</span>Payment</div>
+          <div class="step"><span class="num">5</span>Confirmation</div>
+        </div>
+        <form class="form-card" id="membership-form" novalidate>
+          <div class="form-alert" role="alert" hidden></div>
+
+          <fieldset class="form-step" data-step="1">
+            <legend>Personal Details</legend>
+            <div class="form-grid">
+              <div class="field full"><label for="m-fullName">Full legal name *</label><input id="m-fullName" name="fullName" type="text" placeholder="As shown on your ID" autocomplete="name" required></div>
+              <div class="field"><label for="m-phone">UK mobile number *<span class="hint">A Kenyan number can be given instead if you prefer.</span></label><input id="m-phone" name="phone" type="tel" autocomplete="tel" required></div>
+              <div class="field"><label for="m-email">Email address *</label><input id="m-email" name="email" type="email" autocomplete="email" required></div>
+              <div class="field"><label for="m-dob">Date of birth *</label><input id="m-dob" name="dateOfBirth" type="date" autocomplete="bday" required></div>
+              <div class="field"><label for="m-idType">Kenyan identity document *</label>
+                <select id="m-idType" name="idDocumentType" required><option value="">Select&hellip;</option><option>Kenyan National ID</option><option>Kenyan Passport</option></select>
+              </div>
+              <div class="field"><label for="m-idNumber">Document number *</label><input id="m-idNumber" name="idDocumentNumber" type="text" required></div>
+              <div class="field"><label for="m-language">Preferred language *</label>
+                <select id="m-language" name="language" required><option>English</option><option>Kiswahili</option></select>
+              </div>
+              <div class="field"><label for="m-occupation">Occupation</label><input id="m-occupation" name="occupation" type="text" autocomplete="organization-title"></div>
+              <div class="field full"><label for="m-interest">Area of interest</label>
+                <select id="m-interest" name="interest">
+                  <option value="">Select an interest&hellip;</option>
+                  <option>Community outreach</option><option>Youth activities</option>
+                  <option>Women's programmes</option><option>Persons with disabilities programmes</option>
+                  <option>Policy development</option><option>Events</option>
+                  <option>Digital communication</option><option>Chapter activities</option>
+                  <option>Volunteer coordination</option><option>Other</option>
+                </select>
+              </div>
+              <div class="field full"><label for="m-chapter">Nearest UK chapter</label>
+                <select id="m-chapter" name="chapter">
+                  <option value="">Select&hellip;</option>
+                  <option>London</option><option>Manchester</option><option>Birmingham</option>
+                  <option>Leeds</option><option>Glasgow</option><option>Cardiff</option>
+                  <option>Nottingham</option><option>Belfast</option><option>None nearby</option>
+                </select>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset class="form-step" data-step="2" hidden>
+            <legend>UK Address</legend>
+            <div class="form-grid">
+              <div class="field full"><label for="m-addr1">Address line 1 *</label><input id="m-addr1" name="addressLine1" type="text" autocomplete="address-line1" required></div>
+              <div class="field full"><label for="m-addr2">Address line 2</label><input id="m-addr2" name="addressLine2" type="text" autocomplete="address-line2"></div>
+              <div class="field"><label for="m-town">Town or city *</label><input id="m-town" name="town" type="text" autocomplete="address-level2" required></div>
+              <div class="field"><label for="m-county">County</label><input id="m-county" name="county" type="text" autocomplete="address-level1"></div>
+              <div class="field"><label for="m-postcode">Postcode *</label><input id="m-postcode" name="postcode" type="text" autocomplete="postal-code" required style="text-transform:uppercase;"></div>
+            </div>
+          </fieldset>
+
+          <fieldset class="form-step" data-step="3" hidden>
+            <legend>Declaration</legend>
+            <p style="font-size:14px;color:var(--text-on-light-muted);margin-top:0;">Please confirm each statement.</p>
+            <div class="form-grid" data-field="declarations">
+              <label class="field full checkbox-field"><input type="checkbox" name="kenyanCitizen" style="width:auto;margin-top:3px;"><span>I am a Kenyan citizen.</span></label>
+              <label class="field full checkbox-field"><input type="checkbox" name="over18" style="width:auto;margin-top:3px;"><span>I am at least 18 years old.</span></label>
+              <label class="field full checkbox-field"><input type="checkbox" name="ukResident" style="width:auto;margin-top:3px;"><span>I live in the United Kingdom.</span></label>
+              <label class="field full checkbox-field"><input type="checkbox" name="acceptConstitution" style="width:auto;margin-top:3px;"><span>I accept the DCP constitution and values.</span></label>
+              <label class="field full checkbox-field"><input type="checkbox" name="accurateInfo" style="width:auto;margin-top:3px;"><span>The information I have given is complete and accurate.</span></label>
+              <label class="field full checkbox-field"><input type="checkbox" name="dataConsent" style="width:auto;margin-top:3px;"><span>I understand this registers me with the Democracy for the Citizens Party (Kenya), not a UK political party, and I agree to my details being processed under the party's privacy policy.</span></label>
+            </div>
+          </fieldset>
+
+          <div class="form-step" data-step="4" hidden>
+            <h3 style="margin-top:0;">Pay the registration fee</h3>
+            <p style="font-size:14px;color:var(--text-on-light-muted);margin-top:0;">Your application has been received. Please pay the one-time fee using the details below, and quote your reference so we can match the payment to you.</p>
+            <dl class="pay-details" id="fee-details"></dl>
+            <p id="fee-instructions" style="font-size:14px;color:var(--text-on-light-muted);" hidden></p>
+            <div class="field" style="max-width:360px;">
+              <label for="m-paymentNote">Transaction code (optional)<span class="hint">e.g. the M-Pesa confirmation code or your bank's payment reference. It helps us find your payment.</span></label>
+              <input id="m-paymentNote" name="paymentNote" type="text" maxlength="100">
+            </div>
+          </div>
+
+          <div class="form-step" data-step="5" hidden>
+            <h3 style="margin-top:0;">Thank you</h3>
+            <p style="font-size:15px;">Your registration reference is <strong class="ref" data-ref></strong>. Please keep it for your records.</p>
+            <p style="font-size:14px;color:var(--text-on-light-muted);" data-confirm-text></p>
+            <p style="font-size:14px;color:var(--text-on-light-muted);">As noted on this page, registration and payment don't confirm membership automatically. The chapter will review your application and let you know.</p>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn btn-outline-light btn-sm" data-action="back" disabled>Back</button>
+            <button type="button" class="btn btn-outline-light btn-sm" data-action="pay-later" hidden>I'll pay later</button>
+            <button type="submit" class="btn btn-accent btn-sm" data-action="next">Continue &#8594;</button>
+          </div>
+        </form>
+      </div>
+      <div>
+        <div class="callout-accent" style="margin-bottom:20px;">
+          <p class="section-eyebrow" style="justify-content:flex-start;color:var(--accent-2);">REGISTRATION FEE</p>
+          <p style="font-family:var(--font-display);font-weight:900;font-size:32px;margin:6px 0;color:var(--text-on-light);">KES <span data-fee-amount>100</span></p>
+          <p style="margin:0 0 10px;font-size:13px;color:var(--text-on-light);">One-time membership fee</p>
+          <p style="margin:0;font-size:13px;color:var(--text-on-light-muted);">Paid in Kenyan shillings to the national party. If you are paying from a UK account, the chapter will confirm the current sterling equivalent and accepted payment methods before you are charged.</p>
+        </div>
+        <div class="prose">
+          <h3 style="margin-top:0;">Eligibility</h3>
+          <ul>
+            <li>Be a Kenyan citizen.</li>
+            <li>Be at least 18 years old.</li>
+            <li>Be resident in the United Kingdom.</li>
+            <li>Accept the DCP constitution and values.</li>
+            <li>Provide complete, accurate information.</li>
+            <li>Pay the KES 100 registration fee.</li>
+          </ul>
+          <h3>What membership gives you</h3>
+          <ul>
+            <li>Party news and official statements direct to your inbox.</li>
+            <li>Invitations to UK town halls, meetups and chapter events.</li>
+            <li>A say in chapter matters that are put to members.</li>
+            <li>A route to raise diaspora issues with the national party.</li>
+          </ul>
+          <p style="font-size:13px;">Rights to vote in internal party elections are governed by the party constitution and by Kenyan electoral law, and may differ for members living abroad.</p>
+        </div>
+        <div class="notice-box" style="margin-bottom:14px;"><strong>Please note.</strong> Registration and payment do not automatically confirm membership. Applications may be reviewed and verified before final approval.</div>
+        <div class="notice-box"><strong>What you are joining.</strong> This registers you as a member of the Democracy for the Citizens Party, a political party registered in Kenya. It is not membership of any United Kingdom political party, it confers no rights in United Kingdom elections, and it carries no affiliation with any UK party. Your details are processed by the national party under its privacy policy.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div class="footer-col">
+        <h5>Pages</h5>
+        <ul>
+          <li><a href="index.html">Home</a></li>
+          <li><a href="about.html">About DCP</a></li>
+          <li><a href="membership.html">Membership</a></li>
+          <li><a href="leadership.html">Leadership</a></li>
+          <li><a href="contact.html">Contact</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>Get Involved</h5>
+        <ul>
+          <li><a href="priorities.html">Priorities</a></li>
+          <li><a href="chapters.html">UK Chapters</a></li>
+          <li><a href="events.html">Events</a></li>
+          <li><a href="donate.html">Donate</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>Resources</h5>
+        <ul>
+          <li><a href="news.html">News</a></li>
+          <li><a href="documents.html">Documents</a></li>
+          <li><a href="https://dcp.or.ke" target="_blank" rel="noopener">DCP Kenya (national site)</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-legal">
+      DCP UK is the United Kingdom diaspora chapter of the Democracy for the Citizens Party, Kenya (registered 3 February 2025, Certificate No. 103).<br>
+      Not registered as a political party in the United Kingdom &middot; Does not stand candidates in UK elections &middot; Not affiliated with any UK political party.
+    </div>
+    <div class="footer-brand">DCP<span class="accent">UK</span></div>
+    <div class="footer-links">
+      <a href="documents.html">Privacy Policy</a>
+      <a href="contact.html">Data Requests</a>
+      <a href="https://dcp.or.ke" target="_blank" rel="noopener">National Party Site</a>
+    </div>
+  </div>
+</footer>
+<script src="assets/js/forms.js"></script>
+<script src="assets/js/membership.js"></script>
+<script src="assets/js/login.js"></script>
+</body>
+</html>

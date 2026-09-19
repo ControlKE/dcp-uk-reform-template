@@ -1,0 +1,19 @@
+{
+  "name": "dcp-uk-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Backend for the DCP UK site: member registrations, donation pledges and the admin area for payment account details.",
+  "main": "server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "create-admin": "node scripts/create-admin.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "mysql2": "^3.24.4"
+  }
+}

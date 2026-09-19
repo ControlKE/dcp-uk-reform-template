@@ -1,0 +1,60 @@
+/* ==========================================================================
+   REFORM UK — STRUCTURAL / STYLE CLONE — theme tokens
+   Design tokens extracted by inspecting reformparty.uk (computed styles +
+   visual reference). This file is the single place to re-theme the whole
+   template — see /dcp-preview/assets/css/style.css for a worked example
+   (DCP UK) that imports the same shared components with different tokens.
+   ========================================================================== */
+
+@import url('../../../shared/components.css');
+
+:root {
+  /* ---- Colour tokens --------------------------------------------------- */
+  --bg-dark-1: #050b16;      /* deepest hero background */
+  --bg-dark-2: #0a1628;      /* primary dark section background */
+  --bg-dark-3: #0d2137;      /* raised dark panel / card */
+  --bg-dark-4: #0f2847;      /* lighter dark panel */
+  --bg-light: #ffffff;       /* light section background */
+  --bg-light-tint: #f1f5f9;  /* subtle light tint */
+
+  --text-on-dark: #ffffff;
+  --text-on-dark-muted: rgba(255, 255, 255, 0.65);
+  --text-on-light: #111827;
+  --text-on-light-muted: #4b5563;
+
+  --accent: #17b9d1;         /* primary brand accent (teal/cyan) */
+  --accent-strong: #00c1de;
+  --accent-soft: rgba(23, 185, 209, 0.15);
+  --accent-contrast: #ffffff;
+  --accent-2: #17b9d1;       /* Reform only uses one accent colour */
+  --accent-light: var(--accent); /* accent variant used for text/borders sitting
+                                     on dark backgrounds — Reform's teal already
+                                     has enough contrast there, so this is the
+                                     same colour; a darker-accent brand (like
+                                     DCP's green) should set a brighter value */
+
+  --border-on-dark: rgba(255, 255, 255, 0.12);
+  --border-on-light: #e5e7eb;
+
+  /* ---- Typography -------------------------------------------------------
+     Reform UK uses a condensed/heavy display face ("Gotham") for headings
+     and Montserrat as the sans-serif fallback/body pairing. Swap this for
+     the target brand's own type stack. */
+  --font-display: "Montserrat", "Gotham", Arial, sans-serif;
+  --font-body: "Montserrat", Arial, sans-serif;
+
+  /* ---- Shape / spacing --------------------------------------------------- */
+  --radius-pill: 9999px;
+  --radius-card: 20px;
+  --radius-card-lg: 28px;
+  --nav-height: 84px;
+  --ticker-height: 40px;
+  --container-max: 1280px;
+  --gutter: 24px;
+
+  --shadow-card: 0 20px 40px -20px rgba(0, 0, 0, 0.45);
+}
+
+.hero-title, .section-title, .nav-links, .eyebrow, .section-eyebrow {
+  text-transform: uppercase;
+}

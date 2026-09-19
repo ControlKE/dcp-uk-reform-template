@@ -1,0 +1,5 @@
+node_modules/
+# Admin login and database password: never commit.
+.env
+# Old SQLite data from before the move to MySQL: holds personal data, never commit.
+data/

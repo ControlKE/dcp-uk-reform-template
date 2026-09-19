@@ -1,0 +1,81 @@
+/* ==========================================================================
+   DCP UK — Reform-UK-structured theme
+   Same component classes/layout as /reform-clone/assets/css/style.css —
+   only the token values (and a couple of DCP-specific tweaks lower down)
+   change. This is the file to hand to Claude Code as "what changes when
+   we reskin the Reform template for DCP".
+   ========================================================================== */
+
+@import url('../../../shared/components.css');
+
+:root {
+  /* ---- Colour tokens (sampled from the live DCP UK site + Kenyan flag
+     palette: black / red / green / white, which DCP's own greens and the
+     motto card's maroon accent already draw from) ------------------------ */
+  --bg-dark-1: #0d2410;      /* deepest hero background (was navy) */
+  --bg-dark-2: #17401b;      /* primary dark section / navbar (DCP region-bar green) */
+  --bg-dark-3: #1f4f24;      /* raised dark panel / card */
+  --bg-dark-4: #24592a;      /* lighter dark panel / DCP primary button green */
+  --bg-light: #ffffff;
+  --bg-light-tint: #e9f2e4;  /* DCP's light green section tint */
+
+  --text-on-dark: #ffffff;
+  --text-on-dark-muted: rgba(255, 255, 255, 0.68);
+  --text-on-light: #14201a;
+  --text-on-light-muted: #4b5f52;
+
+  --accent: #24592a;         /* DCP primary green (was Reform teal) — used for
+                                 buttons and text/borders on LIGHT backgrounds */
+  --accent-strong: #173f1b;
+  --accent-soft: rgba(36, 89, 42, 0.12);
+  --accent-contrast: #ffffff;
+
+  /* DCP's brand green is dark, so it has poor contrast used as text on a
+     dark background (unlike Reform's light teal, which works everywhere).
+     This brighter green is used instead anywhere accent text/borders sit
+     on a dark surface — ticker, navbar, hero, dark section eyebrows. */
+  --accent-light: #57c065;
+
+  /* DCP's secondary/motto accent — a muted brick red, echoing the Kenyan
+     flag's red band. Use sparingly (eyebrow underlines, small accents),
+     the way Reform uses teal as its one accent colour. */
+  --accent-2: #7a2e22;
+
+  --border-on-dark: rgba(255, 255, 255, 0.14);
+  --border-on-light: #dbe6dc;
+
+  /* DCP's live site is set in Inter — keep that rather than importing
+     Reform's Gotham/Montserrat pairing. */
+  --font-display: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --radius-pill: 999px;
+  --radius-card: 16px;
+  --radius-card-lg: 24px;
+  --nav-height: 84px;
+  --ticker-height: 40px;
+  --container-max: 1280px;
+  --gutter: 24px;
+
+  --shadow-card: 0 20px 40px -20px rgba(0, 0, 0, 0.35);
+
+  /* Hero photo overlay — echoes the gradient already used on the live
+     DCP site's own hero image (dark green, fading toward the photo). */
+  --hero-overlay: linear-gradient(120deg, rgba(13,26,15,.93) 0%, rgba(17,64,27,.82) 45%, rgba(23,64,27,.42) 100%);
+}
+
+/* Headings in the DCP theme read better at a slightly less extreme
+   weight/tracking than Reform's condensed display face — Inter Black
+   doesn't have the same built-in condensed proportions as Gotham. */
+.hero-title, .section-title { text-transform: none; letter-spacing: -0.02em; }
+.nav-links { text-transform: uppercase; font-size: 13px; letter-spacing: 0.03em; }
+.eyebrow, .section-eyebrow { text-transform: uppercase; }
+
+/* DCP's motto/quote callouts use a left accent bar in the brick-red
+   secondary colour rather than Reform's plain card. */
+.callout-accent {
+  border-left: 4px solid var(--accent-2);
+  background: var(--bg-light-tint);
+  border-radius: 0 var(--radius-card) var(--radius-card) 0;
+  padding: 24px 28px;
+}
