@@ -46,7 +46,7 @@ dcp-uk-reform-template/
         ├── js/forms.js               ← shared form helpers (API calls, field errors, payment-detail lists)
         ├── js/membership.js          ← Membership step flow + fee payment step
         ├── js/donate.js              ← Donate amount picker + pledge submission
-        ├── js/member-portal.js       ← Member Portal form: stubbed handleMemberLookup()
+        ├── js/member-portal.js       ← Member Portal popup + page form: stubbed handleMemberLookup()
         ├── img/dcp-rally.jpg         ← the real hero photo from dcp-kenya.co.ke (see Section 8)
         └── img/dcp-logo.png          ← the real DCP logo, used by the navbar and footer
 ```
@@ -278,6 +278,8 @@ In the mobile menu (below 900px) DONATE and JOIN go full width and the portal ic
 | `--brand-bright` | `#6ccd79` | Portal button hover |
 | `--pill-dark` | `#0d2410` (`--bg-dark-1`) | DONATE pill |
 | `--portal-from/via/to` | `#0d2410` / `#17401b` / `#1f4f24` | Member Portal background gradient |
+
+**Member Portal popup.** The navbar's portal icon opens the sign-in as a dialog over the current page (`.portal-dialog`, 420px, the same card on the page's dark-green gradient), closed with ✕, Escape or a click on the backdrop, and reset each time it opens. Without JavaScript the icon is still an ordinary link to the page below, which also stays available for direct links. Both copies share `assets/js/member-portal.js`.
 
 **Member Portal page** (`/member-portal`): full-viewport dark-green gradient with a faint 60px grid at 3% opacity, the DCP wordmark above a 448px glass card (`rgb(255 255 255 / .10)`, 24px radius, 24px backdrop blur), an 80px icon tile, "Member Portal" at 36px/900, email field with an inline icon, and a full-width Continue button. Below: helper text, a "Join DCP UK" link and "Back to homepage".
 

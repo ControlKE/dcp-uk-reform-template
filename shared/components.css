@@ -459,6 +459,32 @@ ul { list-style: none; margin: 0; padding: 0; }
 .portal-back { margin-top: 32px; display: inline-flex; align-items: center; gap: 8px; color: rgb(255 255 255 / .4); font-size: 14px; text-decoration: none; transition: color .2s; }
 .portal-back:hover { color: rgb(255 255 255 / .7); }
 .portal-back svg { width: 16px; height: 16px; }
+/* The same card as a popup over the page, opened by the navbar's portal icon.
+   The dialog carries the page's dark gradient so the glass card reads the
+   same way it does on /member-portal. */
+.portal-dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 0; border: 0; border-radius: 24px; overflow: visible;
+  background: linear-gradient(to bottom right, var(--portal-from) 0%, var(--portal-via) 50%, var(--portal-to) 100%);
+  box-shadow: 0 30px 60px -20px rgb(0 0 0 / .55);
+  font-family: var(--font-body);
+}
+.portal-dialog::backdrop { background: rgb(10 20 12 / .6); }
+.portal-dialog .portal-card { position: relative; border-radius: 24px; padding: 32px 28px; box-shadow: none; }
+.portal-dialog .portal-card__head { margin-bottom: 24px; }
+.portal-dialog .portal-icon { width: 64px; height: 64px; margin-bottom: 18px; }
+.portal-dialog .portal-icon svg { width: 32px; height: 32px; }
+.portal-dialog .portal-card h2 { font-family: var(--font-display); font-size: 26px; font-weight: 900; color: #fff; margin: 0 0 6px; }
+.portal-dialog .portal-join { margin-top: 24px; }
+.portal-dialog-close {
+  position: absolute; top: 14px; right: 14px; width: 32px; height: 32px;
+  border: 0; border-radius: var(--radius-pill); cursor: pointer;
+  background: rgb(255 255 255 / .12); color: rgb(255 255 255 / .8);
+  font-size: 20px; line-height: 1;
+}
+.portal-dialog-close:hover { background: rgb(255 255 255 / .2); color: #fff; }
+.portal-dialog-close:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
 @media (max-width: 560px) { .portal-card { padding: 32px 24px; } .portal-card h1 { font-size: 30px; } }
 @media (prefers-reduced-motion: reduce) {
   .portal-brand, .portal-submit, .portal-submit svg, .portal-join a svg { transition: none; }
