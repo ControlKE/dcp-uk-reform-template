@@ -10,15 +10,19 @@ const settings = require('./lib/settings');
 const { validateMember, validateDonation } = require('./lib/validate');
 
 const PORT = Number(process.env.PORT) || 3000;
-const HOST = process.env.HOST || '127.0.0.1';
+const IN_PRODUCTION = process.env.NODE_ENV === 'production';
+// Hosting platforms route traffic to the container's own address, so listen on
+// all interfaces there; locally stay on loopback.
+const HOST = process.env.HOST || (IN_PRODUCTION ? '0.0.0.0' : '127.0.0.1');
 const SITE_DIR = path.join(__dirname, '..', 'dcp-preview');
 const SHARED_DIR = path.join(__dirname, '..', 'shared');
 const ADMIN_DIR = path.join(__dirname, 'admin');
 
 const app = express();
 app.disable('x-powered-by');
-// Set TRUST_PROXY=1 when running behind a reverse proxy (e.g. on a host with HTTPS in front).
-if (process.env.TRUST_PROXY) app.set('trust proxy', 1);
+// Hosts terminate HTTPS in front of the app, so trust their proxy headers:
+// that's what makes req.secure true and marks the admin cookie Secure.
+if (process.env.TRUST_PROXY || IN_PRODUCTION) app.set('trust proxy', 1);
 
 app.use((req, res, next) => {
   res.set({
@@ -86,6 +90,16 @@ const likeParam = (q) => `%${String(q).trim().replace(/[\\%_]/g, '\\$&')}%`;
 const orNull = (v) => (v === undefined || v === '' ? null : v);
 
 // ---------------------------------------------------------------- public API
+
+// Used by hosting platforms' health checks.
+app.get('/api/health', async (req, res) => {
+  try {
+    await db.one('SELECT 1 AS ok');
+    res.json({ ok: true, database: 'up' });
+  } catch (err) {
+    res.status(503).json({ ok: false, database: 'down' });
+  }
+});
 
 app.get('/api/payment-details', async (req, res) => {
   res.json({ feeAccount: await settings.publicFeeAccount(), donationAccount: await settings.publicDonationAccount() });
@@ -384,7 +398,8 @@ app.use((err, req, res, next) => {
     console.log(`Database:      ${db.config.database} on ${db.config.host}:${db.config.port} (manage it in phpMyAdmin)`);
     console.log(`DCP UK site:   ${base}/`);
     console.log(`Admin area:    ${base}/admin/`);
-    if (seeded) console.log(`Admin login:   ${seeded} (password set in server/.env)`);
-    else console.log('No ADMIN_EMAIL / ADMIN_PASSWORD in server/.env: add them, or run npm run create-admin -- <email>.');
+    const where = IN_PRODUCTION ? 'the host\'s environment variables' : 'server/.env';
+    if (seeded) console.log(`Admin login:   ${seeded} (password set in ${where})`);
+    else console.log(`No ADMIN_EMAIL / ADMIN_PASSWORD in ${where}: add them, or run npm run create-admin -- <email>.`);
   });
 })();
