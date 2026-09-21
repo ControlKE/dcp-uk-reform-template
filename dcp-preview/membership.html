@@ -82,6 +82,10 @@
                   <option>Volunteer coordination</option><option>Other</option>
                 </select>
               </div>
+              <div class="field full" data-when-interest="Other" hidden>
+                <label for="m-interestOther">Which area? *<span class="hint">Tell us what you would like to get involved with.</span></label>
+                <input id="m-interestOther" name="interestOther" type="text" maxlength="100">
+              </div>
               <div class="field full"><label for="m-chapter">Nearest UK chapter</label>
                 <select id="m-chapter" name="chapter">
                   <option value="">Select&hellip;</option>
@@ -89,6 +93,10 @@
                   <option>Leeds</option><option>Glasgow</option><option>Cardiff</option>
                   <option>Nottingham</option><option>Belfast</option><option>None nearby</option>
                 </select>
+              </div>
+              <div class="field full" data-when-chapter="None nearby" hidden>
+                <label for="m-chapterOther">Where are you based? *<span class="hint">Your town or city, so the chapter knows where members are.</span></label>
+                <input id="m-chapterOther" name="chapterOther" type="text" maxlength="120">
               </div>
             </div>
           </fieldset>

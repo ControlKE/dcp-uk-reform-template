@@ -54,7 +54,11 @@ const SCHEMA = [
     language           VARCHAR(20) NOT NULL,
     occupation         VARCHAR(120) NULL,
     interest           VARCHAR(60) NULL,
+    -- filled in when interest is "Other"
+    interest_other     VARCHAR(100) NULL,
     chapter            VARCHAR(40) NULL,
+    -- filled in when chapter is "None nearby"
+    chapter_other      VARCHAR(120) NULL,
     address_line1      VARCHAR(120) NOT NULL,
     address_line2      VARCHAR(120) NULL,
     town               VARCHAR(80) NOT NULL,
@@ -114,11 +118,21 @@ async function init() {
 }
 
 // Small schema changes for databases created by an earlier version.
-async function migrate() {
-  const [col] = await pool.query(
+async function hasColumn(table, column) {
+  const [rows] = await pool.query(
     `SELECT COLUMN_NAME FROM information_schema.COLUMNS
-     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'members' AND COLUMN_NAME = 'fee_amount_kes'`, [config.database]);
-  if (col.length) {
+     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?`, [config.database, table, column]);
+  return rows.length > 0;
+}
+
+async function migrate() {
+  if (!(await hasColumn('members', 'interest_other'))) {
+    await pool.query("ALTER TABLE members ADD COLUMN interest_other VARCHAR(100) NULL AFTER interest");
+  }
+  if (!(await hasColumn('members', 'chapter_other'))) {
+    await pool.query("ALTER TABLE members ADD COLUMN chapter_other VARCHAR(120) NULL AFTER chapter");
+  }
+  if (await hasColumn('members', 'fee_amount_kes')) {
     // The fee used to be shillings-only; it now carries its own currency.
     await pool.query('ALTER TABLE members CHANGE COLUMN fee_amount_kes fee_amount DECIMAL(10,2) NOT NULL');
     await pool.query("ALTER TABLE members ADD COLUMN fee_currency VARCHAR(3) NOT NULL DEFAULT 'KES' AFTER fee_amount");

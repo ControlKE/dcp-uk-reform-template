@@ -191,10 +191,10 @@
     row(dl, 'Date of birth', m.date_of_birth);
     row(dl, 'ID document', `${m.id_document_type}: ${m.id_document_number}`);
     row(dl, 'Address', [m.address_line1, m.address_line2, m.town, m.county, m.postcode].filter(Boolean).join(', '));
-    row(dl, 'Chapter', m.chapter);
+    row(dl, 'Chapter', m.chapter === 'None nearby' && m.chapter_other ? `None nearby — ${m.chapter_other}` : m.chapter);
     row(dl, 'Language', m.language);
     row(dl, 'Occupation', m.occupation);
-    row(dl, 'Interest', m.interest);
+    row(dl, 'Interest', m.interest === 'Other' && m.interest_other ? `Other — ${m.interest_other}` : m.interest);
     row(dl, 'Fee due', money(m.fee_amount, m.fee_currency));
     row(dl, 'Payment code given', m.payment_note);
     row(dl, 'Last updated', when(m.updated_at));

@@ -36,11 +36,32 @@
     form.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
+  // Follow-up boxes that appear only for a particular answer ("Other",
+  // "None nearby"). Hidden ones are cleared so a stale answer isn't sent.
+  const followUps = [...form.querySelectorAll('[data-when-interest], [data-when-chapter]')].map((wrap) => ({
+    wrap,
+    select: form.elements[wrap.dataset.whenInterest !== undefined ? 'interest' : 'chapter'],
+    value: wrap.dataset.whenInterest ?? wrap.dataset.whenChapter,
+    input: wrap.querySelector('input'),
+  }));
+
+  function syncFollowUps() {
+    followUps.forEach(({ wrap, select, value, input }) => {
+      const show = select.value === value;
+      wrap.hidden = !show;
+      input.required = show;
+      if (!show) input.value = '';
+    });
+  }
+  followUps.forEach(({ select }) => select.addEventListener('change', syncFollowUps));
+  syncFollowUps();
+
   // Quick in-browser check of the current step; the server re-checks everything.
   function checkStep(n) {
     const errors = {};
     const panel = form.querySelector(`[data-step="${n}"]`);
     panel.querySelectorAll('input[required], select[required]').forEach((el) => {
+      if (el.closest('[hidden]')) return;
       if (!el.value.trim()) errors[el.name] = 'This field is required.';
       else if (el.type === 'email' && !el.checkValidity()) errors[el.name] = 'Enter a valid email address.';
     });
@@ -57,7 +78,9 @@
     return {
       fullName: data.fullName, phone: data.phone, email: data.email, dateOfBirth: data.dateOfBirth,
       idDocumentType: data.idDocumentType, idDocumentNumber: data.idDocumentNumber, language: data.language,
-      occupation: data.occupation, interest: data.interest, chapter: data.chapter,
+      occupation: data.occupation,
+      interest: data.interest, interestOther: data.interestOther,
+      chapter: data.chapter, chapterOther: data.chapterOther,
       addressLine1: data.addressLine1, addressLine2: data.addressLine2, town: data.town,
       county: data.county, postcode: data.postcode, declarations,
     };

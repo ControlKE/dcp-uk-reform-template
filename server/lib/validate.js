@@ -46,7 +46,9 @@ function validateMember(body) {
     language: str(b.language, 20),
     occupation: str(b.occupation, 120),
     interest: str(b.interest, 60),
+    interestOther: str(b.interestOther, 100),
     chapter: str(b.chapter, 40),
+    chapterOther: str(b.chapterOther, 120),
     addressLine1: str(b.addressLine1, 120),
     addressLine2: str(b.addressLine2, 120),
     town: str(b.town, 80),
@@ -69,6 +71,18 @@ function validateMember(body) {
   if (!OPTIONS.language.includes(m.language)) fail('language', 'Choose a preferred language.');
   if (m.interest && !OPTIONS.interest.includes(m.interest)) fail('interest', 'Choose an area of interest from the list.');
   if (m.chapter && !OPTIONS.chapter.includes(m.chapter)) fail('chapter', 'Choose a chapter from the list.');
+  // The two "tell us more" boxes: required only when their option is picked,
+  // and discarded otherwise so a stale answer can't be stored.
+  if (m.interest === 'Other') {
+    if (!m.interestOther) fail('interestOther', 'Tell us which area you are interested in.');
+  } else {
+    m.interestOther = '';
+  }
+  if (m.chapter === 'None nearby') {
+    if (!m.chapterOther) fail('chapterOther', 'Tell us the town or city you are closest to.');
+  } else {
+    m.chapterOther = '';
+  }
   if (!m.addressLine1) fail('addressLine1', 'Enter the first line of your address.');
   if (!m.town) fail('town', 'Enter your town or city.');
   if (!POSTCODE_RE.test(m.postcode)) fail('postcode', 'Enter a valid UK postcode.');
