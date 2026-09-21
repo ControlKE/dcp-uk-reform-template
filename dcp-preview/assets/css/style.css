@@ -75,9 +75,9 @@
   --portal-via: #17401b;
   --portal-to: #1f4f24;
 
-  /* Hero photo overlay — echoes the gradient already used on the live
-     DCP site's own hero image (dark green, fading toward the photo). */
-  --hero-overlay: linear-gradient(120deg, rgba(13,26,15,.93) 0%, rgba(17,64,27,.82) 45%, rgba(23,64,27,.42) 100%);
+  /* Hero photo overlay — the exact gradient used on the live dcp-kenya.co.ke
+     hero. Do not change the angle, stops or alpha values. */
+  --hero-overlay: linear-gradient(135deg, rgba(23,64,27,0.92) 0%, rgba(36,90,42,0.78) 60%, rgba(17,17,17,0.6) 100%);
 }
 
 /* Headings in the DCP theme read better at a slightly less extreme

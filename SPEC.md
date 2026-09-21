@@ -47,7 +47,7 @@ dcp-uk-reform-template/
         ├── js/membership.js          ← Membership step flow + fee payment step
         ├── js/donate.js              ← Donate amount picker + pledge submission
         ├── js/member-portal.js       ← Member Portal form: stubbed handleMemberLookup()
-        └── img/hero-placeholder.jpg  ← stand-in hero image — see Section 8, replace with the real photo
+        └── img/dcp-rally.jpg         ← the real hero photo from dcp-kenya.co.ke (see Section 8)
 ```
 
 To preview the whole site, run it through the backend: `npm install` then `npm start` in this folder, and open `http://localhost:3000/` (admin area at `/admin/`). In VS Code you can also press F5 and choose **DCP UK: site + backend**. Most pages are still static HTML/CSS and open fine straight from disk, but the Membership and Donate forms need the server. Every nav link, footer link and in-page cross-link across all 11 `dcp-preview` pages resolves to a real page in this bundle (no `#` placeholders left in the nav or footer).
@@ -85,7 +85,7 @@ All of these are CSS custom properties in `assets/css/style.css` in each theme f
 | `--accent` (primary CTA/link colour) | `#17b9d1` teal/cyan | `#24592a` DCP green | Used for text/borders/buttons on **light** backgrounds |
 | `--accent-light` (accent text/border on **dark** backgrounds) | `var(--accent)` (Reform's teal already has enough contrast on navy) | `#57c065` brighter green | **New token, added in this update.** DCP's `--accent` is a dark green with poor contrast when used as text on DCP's own dark-green section backgrounds (unlike Reform, whose single teal accent works everywhere). Every selector in `shared/components.css` that renders accent-coloured text/borders on a dark surface (ticker, navbar links/hover, hero eyebrow, stat numbers, dark-section eyebrows, doc-card accents, accordion icon, newsletter border, footer link hover, page-hero breadcrumb hover) now uses `--accent-light` instead of `--accent`. If Claude Code introduces a new dark-background brand (not white/light-teal like Reform), it needs its own `--accent-light` value the same way — don't reuse a single accent colour across both light and dark sections without checking contrast. |
 | `--accent-2` (secondary accent, used sparingly) | n/a (Reform is single-accent) | `#7a2e22` brick red | DCP's motto-card left-border colour — echoes the red band in the Kenyan flag, pairs with the green. Use the way Reform uses teal-on-dark: eyebrows, small underlines, callout borders. Don't overuse. |
-| `--hero-overlay` (gradient over the hero photo) | n/a (Reform's hero has no photo, just a dark gradient background) | `linear-gradient(120deg, rgba(13,26,15,.93) 0%, rgba(17,64,27,.82) 45%, rgba(23,64,27,.42) 100%)` | **New token.** Sits over `.hero-photo-img` so the white hero headline/sub-copy stay legible regardless of what's in the photo. See Section 8. |
+| `--hero-overlay` (gradient over the hero photo) | n/a (Reform's hero has no photo, just a dark gradient background) | `linear-gradient(135deg, rgba(23,64,27,0.92) 0%, rgba(36,90,42,0.78) 60%, rgba(17,17,17,0.6) 100%)` — the live dcp-kenya.co.ke value, copied exactly | **New token.** Sits over `.hero-photo-img` so the white hero headline/sub-copy stay legible regardless of what's in the photo. See Section 8. |
 | `--font-display` / `--font-body` | `Montserrat, "Gotham", sans-serif` (condensed/heavy display face) | `Inter, ui-sans-serif, system-ui, sans-serif` (already DCP's font) | Keep DCP's existing Inter rather than importing Gotham — swapping type families is the single highest-risk change for "looking like a clone"; keeping DCP's own font while adopting Reform's *layout* is what makes this read as "DCP, Reform-shaped" rather than "Reform, recoloured." |
 | `--radius-pill` / `--radius-card` | `9999px` / `20px` (very rounded, pill buttons) | same pill radius; slightly tighter `16px` card radius | DCP's own site already uses `999px` pills and `8px` cards — this bundle rounds cards up a little to match Reform's softer, larger-radius cards; adjust to taste |
 
@@ -150,7 +150,7 @@ Every page above links to every other relevant page — nav, footer, and in-page
 
 - [ ] Replace all `[bracketed placeholders]` — none should ship; `dcp-preview/index.html` already shows the fully-substituted version for Home
 - [ ] Logo: swap the text "DCP" wordmark placeholder for DCP's actual logo mark (the concentric-circle "listening ear" icon seen on the live site) — don't just set text, use the real SVG/PNG
-- [ ] Hero photo: `dcp-preview/index.html` ships with a generated placeholder (`assets/img/hero-placeholder.jpg`) standing in for DCP's real hero image — **in the real project, point `.hero-photo-img`'s `src` at the actual asset already used on the live `localhost:8000/uk/` homepage** (this bundle couldn't read that file directly — see Section 8 for exactly what to change)
+- [x] Hero photo: done — `dcp-preview/index.html` now uses the real photo (`assets/img/dcp-rally.jpg`, taken from the live dcp-kenya.co.ke hero) with that site's exact gradient overlay. See Section 8.
 - [ ] Leadership/Chapters photos: `leadership.html` and `chapters.html` currently show "Photo to follow" placeholder panels (`.person-card`/`.list-card` with no image) rather than invented photos — replace with real photos as/when DCP has them for each named role or chapter; don't source stand-in photos of real people
 - [ ] Every placeholder `[Image]` / grey box in `reform-clone/*.html` needs a real DCP photo when adapted — none of Reform's actual photography should be used (it's Reform's own brand asset, not DCP's)
 - [ ] Keep DCP's existing legal/compliance paragraph ("DCP UK is the United Kingdom outreach chapter of the Democracy for the Citizens Party… not affiliated with… any United Kingdom political party") verbatim and prominent — this is regulatory/compliance language, not marketing copy, and shouldn't be trimmed for the redesign
@@ -171,13 +171,16 @@ The pages in this bundle are HTML/CSS reference (plus the small form scripts in 
 
 ---
 
-## 8. The hero photo — placeholder vs. the real asset
+## 8. The hero photo — reproduced from dcp-kenya.co.ke
 
-The brief asked for "the picture from the original website in the Hero section." That has been done as far as this standalone bundle can go: `dcp-preview/index.html` has a real `.hero.hero-photo` section with an `<img class="hero-photo-img">` and a dark gradient overlay (`--hero-overlay`) so the white headline/sub-copy stay readable over any photo.
+**Done.** The hero on `dcp-preview/index.html` reproduces the live dcp-kenya.co.ke hero background exactly. The earlier placeholder graphic has been deleted.
 
-What it's pointing at right now is **not** DCP's real photo. This session could see and describe the live `localhost:8000/uk/` homepage's hero image via the browser, but had no way to extract the actual image file from your local dev server or filesystem — so `assets/img/hero-placeholder.jpg` is a generated abstract stand-in (a dark-green gradient), just so the layout/overlay/contrast technique can be previewed and judged.
+- **Image:** `assets/img/dcp-rally.jpg`, downloaded unchanged from `https://dcp-kenya.co.ke/assets/dcp-rally-RM8d6BkE.jpg` (700×438, no re-encoding or resizing). It is a real `<img>` with `width="1920" height="1080"` and alt text "Kenyan citizens at a community town-hall", not a CSS `background-image`, and CSS makes it fill the section.
+- **Overlay:** `--hero-overlay` holds that site's exact gradient: `linear-gradient(135deg, rgba(23,64,27,0.92) 0%, rgba(36,90,42,0.78) 60%, rgba(17,17,17,0.6) 100%)`. Do not change the angle, stops or alpha values.
+- **Layer order:** image, then gradient, then content. The section is `position: relative; isolation: isolate; overflow: hidden`, both layers are `position: absolute; inset: 0`, the image is `object-fit: cover` with no opacity, filter or blend mode, and the content wrapper is `position: relative` with `padding-block: 6rem` (8rem from 768px up).
+- **Text over the photo:** eyebrow `#70D050` uppercase semibold with wide tracking, headline white at weight 800 and line-height 1.05, body copy white at 85%.
 
-**Claude Code has what this session didn't: direct filesystem access to your project.** The prompt in `CLAUDE_CODE_PROMPT.md` asks it to find the real hero image already used on your live homepage and reference that file directly, replacing the placeholder — that's a trivial change once it can see the repo, and is called out explicitly so it doesn't get missed or left on the placeholder.
+Verified by loading both this hero and the live site in the same browser and comparing the computed values of every layer: image source, natural size, attributes, `object-fit`, gradient string, isolation and padding all match.
 
 ---
 
