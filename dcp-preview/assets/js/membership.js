@@ -1,6 +1,6 @@
 // Membership registration: 3 form steps, then the fee payment details, then confirmation.
 (function () {
-  const { request, showAlert, clearErrors, showErrors, addRow } = window.DCPForms;
+  const { request, showAlert, clearErrors, showErrors, addRow, formatMoney, showFee } = window.DCPForms;
   const form = document.getElementById('membership-form');
   if (!form) return;
 
@@ -66,7 +66,7 @@
   function renderFee(fee, reference) {
     const dl = document.getElementById('fee-details');
     dl.replaceChildren();
-    const amount = `KES ${Number(fee.feeAmountKes).toLocaleString('en-GB')}`;
+    const amount = formatMoney(fee.feeAmount, fee.feeCurrency);
     if (!fee.configured) {
       addRow(dl, 'Amount', amount);
       addRow(dl, 'Your reference', reference, 'ref');
@@ -153,9 +153,7 @@
   });
 
   // Keep the fee shown on the page in line with what the admin has set.
-  request('GET', '/api/payment-details').then(({ feeAccount }) => {
-    document.querySelectorAll('[data-fee-amount]').forEach((el) => { el.textContent = Number(feeAccount.feeAmountKes).toLocaleString('en-GB'); });
-  }).catch(() => {});
+  request('GET', '/api/payment-details').then(({ feeAccount }) => showFee(feeAccount)).catch(() => {});
 
   // Returning to the page mid-payment (e.g. after a refresh) shows the payment step again.
   const saved = load();

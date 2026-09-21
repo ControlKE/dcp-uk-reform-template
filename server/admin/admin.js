@@ -50,7 +50,10 @@
     return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
 
-  const gbp = (n) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n);
+  const money = (n, currency = 'GBP') => new Intl.NumberFormat('en-GB', {
+    style: 'currency', currency, minimumFractionDigits: Number.isInteger(Number(n)) ? 0 : 2,
+  }).format(Number(n));
+  const gbp = (n) => money(n, 'GBP');
 
   function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 
@@ -192,7 +195,7 @@
     row(dl, 'Language', m.language);
     row(dl, 'Occupation', m.occupation);
     row(dl, 'Interest', m.interest);
-    row(dl, 'Fee due', `KES ${m.fee_amount_kes}`);
+    row(dl, 'Fee due', money(m.fee_amount, m.fee_currency));
     row(dl, 'Payment code given', m.payment_note);
     row(dl, 'Last updated', when(m.updated_at));
     const f = $('#md-form');

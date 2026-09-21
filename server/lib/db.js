@@ -60,7 +60,8 @@ const SCHEMA = [
     town               VARCHAR(80) NOT NULL,
     county             VARCHAR(80) NULL,
     postcode           VARCHAR(10) NOT NULL,
-    fee_amount_kes     INT NOT NULL,
+    fee_amount         DECIMAL(10,2) NOT NULL,
+    fee_currency       VARCHAR(3) NOT NULL DEFAULT 'GBP',
     -- pending_payment -> payment_reported -> paid (set by an admin)
     payment_status     VARCHAR(20) NOT NULL DEFAULT 'pending_payment',
     -- M-Pesa / bank transaction code the applicant gave when reporting payment
@@ -109,6 +110,20 @@ async function init() {
   pool.pool.on('connection', (conn) => conn.query("SET time_zone = '+00:00'"));
 
   for (const statement of SCHEMA) await pool.query(statement);
+  await migrate();
+}
+
+// Small schema changes for databases created by an earlier version.
+async function migrate() {
+  const [col] = await pool.query(
+    `SELECT COLUMN_NAME FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'members' AND COLUMN_NAME = 'fee_amount_kes'`, [config.database]);
+  if (col.length) {
+    // The fee used to be shillings-only; it now carries its own currency.
+    await pool.query('ALTER TABLE members CHANGE COLUMN fee_amount_kes fee_amount DECIMAL(10,2) NOT NULL');
+    await pool.query("ALTER TABLE members ADD COLUMN fee_currency VARCHAR(3) NOT NULL DEFAULT 'KES' AFTER fee_amount");
+    await pool.query("ALTER TABLE members ALTER COLUMN fee_currency SET DEFAULT 'GBP'");
+  }
 }
 
 // Returns all rows for a SELECT, or the result header (affectedRows, insertId) for writes.

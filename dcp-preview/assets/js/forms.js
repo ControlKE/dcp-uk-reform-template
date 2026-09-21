@@ -62,9 +62,23 @@ window.DCPForms = (function () {
     dl.append(dt, dd);
   }
 
-  function formatGbp(amount) {
-    return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(amount);
+  // £20 / KES 100.00 — whole amounts lose the trailing zeros.
+  function formatMoney(amount, currency = 'GBP') {
+    const value = Number(amount);
+    return new Intl.NumberFormat('en-GB', {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
+    }).format(value);
   }
 
-  return { request, showAlert, clearErrors, showErrors, addRow, formatGbp };
+  const formatGbp = (amount) => formatMoney(amount, 'GBP');
+
+  // Keeps the fee shown in the page copy in step with the admin settings.
+  function showFee(feeAccount) {
+    const text = formatMoney(feeAccount.feeAmount, feeAccount.feeCurrency);
+    document.querySelectorAll('[data-fee-amount]').forEach((el) => { el.textContent = text; });
+  }
+
+  return { request, showAlert, clearErrors, showErrors, addRow, formatMoney, formatGbp, showFee };
 })();

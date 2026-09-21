@@ -221,7 +221,7 @@ A small Node.js service (Express 5 + MySQL/MariaDB via `mysql2`, so the data can
 
 **3. Admin area** (`/admin/`, reached from the **LOGIN** button at the end of every page's navbar, which opens a small sign-in popup; all under `/api/admin/*`, login required):
 - **Payment accounts.** The admin enters where money goes:
-  - *Membership fee account* — M-Pesa Paybill, M-Pesa Till or bank transfer, plus the fee amount in KES. With Paybill, the member's reference is used as the account number.
+  - *Membership fee account* — M-Pesa Paybill, M-Pesa Till or bank transfer, plus the fee amount and its currency (GBP, KES, USD or EUR; currently £20). With Paybill, the member's reference is used as the account number.
   - *Donations bank account* — the UK account name, bank, sort code, account number, and optionally IBAN/SWIFT.
 
   Sort codes, UK account numbers, IBANs (checksum) and SWIFT codes are validated on save. Each account records who last changed it and when.

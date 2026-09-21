@@ -101,11 +101,11 @@ app.post('/api/members', submissionLimit, async (req, res) => {
   await db.query(`
     INSERT INTO members (reference, access_token_hash, full_name, phone, email, date_of_birth,
       id_document_type, id_document_number, language, occupation, interest, chapter,
-      address_line1, address_line2, town, county, postcode, fee_amount_kes, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
+      address_line1, address_line2, town, county, postcode, fee_amount, fee_currency, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())
   `, [reference, auth.sha256(accessToken), m.fullName, m.phone, m.email, m.dateOfBirth,
     m.idDocumentType, m.idDocumentNumber, m.language, orNull(m.occupation), orNull(m.interest), orNull(m.chapter),
-    m.addressLine1, orNull(m.addressLine2), m.town, orNull(m.county), m.postcode, feeAccount.feeAmountKes]);
+    m.addressLine1, orNull(m.addressLine2), m.town, orNull(m.county), m.postcode, feeAccount.feeAmount, feeAccount.feeCurrency]);
 
   res.status(201).json({ reference, accessToken, feeAccount });
 });
@@ -224,7 +224,7 @@ const PAYMENT_STATUSES = ['pending_payment', 'payment_reported', 'paid'];
 const MEMBER_COLUMNS = `
   m.id, m.reference, m.full_name, m.phone, m.email, m.date_of_birth, m.id_document_type,
   m.id_document_number, m.language, m.occupation, m.interest, m.chapter, m.address_line1,
-  m.address_line2, m.town, m.county, m.postcode, m.fee_amount_kes, m.payment_status, m.payment_note, m.status,
+  m.address_line2, m.town, m.county, m.postcode, m.fee_amount, m.fee_currency, m.payment_status, m.payment_note, m.status,
   m.admin_notes, m.created_at, m.updated_at,
   (SELECT COUNT(*) FROM members d WHERE d.id <> m.id AND (d.id_document_number = m.id_document_number OR d.email = m.email)) AS possible_duplicates`;
 
@@ -266,7 +266,7 @@ adminApi.get('/members.csv', async (req, res) => {
     ['id_document_type', 'ID document'], ['id_document_number', 'Document number'], ['language', 'Language'],
     ['occupation', 'Occupation'], ['interest', 'Interest'], ['chapter', 'Chapter'],
     ['address_line1', 'Address 1'], ['address_line2', 'Address 2'], ['town', 'Town'], ['county', 'County'], ['postcode', 'Postcode'],
-    ['fee_amount_kes', 'Fee (KES)'], ['payment_note', 'Payment code given'], ['admin_notes', 'Admin notes'],
+    ['fee_amount', 'Fee'], ['fee_currency', 'Fee currency'], ['payment_note', 'Payment code given'], ['admin_notes', 'Admin notes'],
   ], await memberQuery(req.query));
 });
 

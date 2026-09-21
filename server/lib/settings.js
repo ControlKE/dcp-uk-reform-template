@@ -1,14 +1,17 @@
 // The two payment destinations the admin sets up:
-//   feeAccount      - where the KES membership registration fee goes (bank or M-Pesa)
+//   feeAccount      - where the membership registration fee goes (bank or M-Pesa),
+//                     with the amount and its currency
 //   donationAccount - the UK bank account that receives GBP donations
 const db = require('./db');
 
 const FEE_METHODS = ['bank', 'mpesa_paybill', 'mpesa_till'];
+const FEE_CURRENCIES = ['GBP', 'KES', 'USD', 'EUR'];
 
 const DEFAULTS = {
   feeAccount: {
-    method: 'mpesa_paybill',
-    feeAmountKes: 100,
+    method: 'bank',
+    feeAmount: 20,
+    feeCurrency: 'GBP',
     accountName: '', bankName: '', accountNumber: '', sortCode: '', iban: '', swift: '',
     paybillNumber: '', tillNumber: '',
     instructions: '',
@@ -53,14 +56,18 @@ function normaliseSwift(v) {
 function validateFeeAccount(input) {
   const method = FEE_METHODS.includes(input.method) ? input.method : null;
   if (!method) throw new ValidationError('Choose how the membership fee is paid.');
-  const feeAmountKes = Number(input.feeAmountKes);
-  if (!Number.isInteger(feeAmountKes) || feeAmountKes < 1 || feeAmountKes > 1000000) {
-    throw new ValidationError('Fee amount must be a whole number of shillings.');
+  const feeCurrency = FEE_CURRENCIES.includes(String(input.feeCurrency || '').toUpperCase())
+    ? String(input.feeCurrency).toUpperCase() : null;
+  if (!feeCurrency) throw new ValidationError(`Choose a fee currency (${FEE_CURRENCIES.join(', ')}).`);
+  const feeAmount = Math.round(Number(input.feeAmount) * 100) / 100;
+  if (!Number.isFinite(feeAmount) || feeAmount < 1 || feeAmount > 1000000) {
+    throw new ValidationError('Fee amount must be between 1 and 1,000,000.');
   }
   const out = {
     ...DEFAULTS.feeAccount,
     method,
-    feeAmountKes,
+    feeAmount,
+    feeCurrency,
     accountName: str(input.accountName, 120),
     instructions: str(input.instructions, 1000),
   };
@@ -118,8 +125,8 @@ async function saveSetting(key, value, adminUsername) {
 // chosen method, and nothing at all until an admin has saved the account.
 async function publicFeeAccount() {
   const { value: a, configured } = await getSetting('feeAccount');
-  if (!configured) return { configured: false, feeAmountKes: a.feeAmountKes };
-  const base = { configured: true, method: a.method, feeAmountKes: a.feeAmountKes, accountName: a.accountName, instructions: a.instructions };
+  if (!configured) return { configured: false, feeAmount: a.feeAmount, feeCurrency: a.feeCurrency };
+  const base = { configured: true, method: a.method, feeAmount: a.feeAmount, feeCurrency: a.feeCurrency, accountName: a.accountName, instructions: a.instructions };
   if (a.method === 'bank') return { ...base, bankName: a.bankName, accountNumber: a.accountNumber, sortCode: a.sortCode, iban: a.iban, swift: a.swift };
   if (a.method === 'mpesa_paybill') return { ...base, paybillNumber: a.paybillNumber };
   return { ...base, tillNumber: a.tillNumber };
@@ -133,7 +140,7 @@ async function publicDonationAccount() {
 }
 
 module.exports = {
-  ValidationError, FEE_METHODS,
+  ValidationError, FEE_METHODS, FEE_CURRENCIES,
   getSetting, saveSetting, validateFeeAccount, validateDonationAccount,
   publicFeeAccount, publicDonationAccount,
 };
