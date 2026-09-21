@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Member Portal | DCP UK</title>
+<link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+<main class="portal-page">
+  <div class="portal-page__bg"></div>
+  <div class="portal-page__grid"></div>
+
+  <div class="portal-page__inner">
+    <a href="index.html" class="portal-brand">DCP<span class="accent">UK</span></a>
+
+    <div class="portal-col">
+      <div class="portal-card">
+        <div class="portal-card__head">
+          <div class="portal-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/>
+            </svg>
+          </div>
+          <h1>Member Portal</h1>
+          <p>Enter your email to continue</p>
+        </div>
+
+        <form class="portal-form" id="portal-form" novalidate>
+          <div>
+            <label for="email">Email Address</label>
+            <div class="portal-input-wrap">
+              <div class="icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207"/>
+                </svg>
+              </div>
+              <input id="email" name="email" type="email" required autocomplete="email"
+                     placeholder="Enter your email address" aria-describedby="portal-error">
+            </div>
+            <p class="portal-error" id="portal-error" role="alert" hidden></p>
+          </div>
+
+          <button type="submit" class="portal-submit" id="portal-submit">
+            <span data-label>Continue</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
+            </svg>
+          </button>
+        </form>
+      </div>
+
+      <p class="portal-note">We'll check if you're already a member and either send you a magic login link or help you register.</p>
+
+      <div class="portal-join">
+        <p>Not a member yet?</p>
+        <a href="membership.html">
+          Join DCP UK
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/>
+          </svg>
+        </a>
+      </div>
+    </div>
+
+    <a href="index.html" class="portal-back">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+      </svg>
+      <span>Back to homepage</span>
+    </a>
+  </div>
+</main>
+<script src="assets/js/member-portal.js"></script>
+</body>
+</html>

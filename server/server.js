@@ -350,6 +350,13 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));
 app.use('/admin', (req, res, next) => { res.set({ 'X-Robots-Tag': 'noindex, nofollow', 'Cache-Control': 'no-store' }); next(); },
   express.static(ADMIN_DIR));
 app.use('/shared', express.static(SHARED_DIR));
+
+// Friendly URLs for the header buttons; the .html files still work too.
+const PAGE_ROUTES = { '/donate': 'donate.html', '/join': 'membership.html', '/member-portal': 'member-portal.html' };
+for (const [route, file] of Object.entries(PAGE_ROUTES)) {
+  app.get(route, (req, res) => res.sendFile(path.join(SITE_DIR, file)));
+}
+
 app.use(express.static(SITE_DIR));
 
 app.use((err, req, res, next) => {

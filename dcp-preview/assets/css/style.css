@@ -59,6 +59,22 @@
 
   --shadow-card: 0 20px 40px -20px rgba(0, 0, 0, 0.35);
 
+  /* ---- Brand token for the header button set and Member Portal ----------
+     One token so the accent can be swapped later. It points at DCP's own
+     green rather than the reference design's cyan. */
+  --brand: var(--accent);              /* #24592a — pill fill, links, focus ring */
+  --brand-hover: var(--accent-light);  /* #57c065 — hover on dark surfaces */
+  --brand-deep: var(--accent-strong);  /* #173f1b — arrow disc on the JOIN pill */
+  --brand-bright: #6ccd79;             /* hover for the bright-green CTA on dark panels */
+  --brand-rgb: 36, 89, 42;             /* for rgb(var(--brand-rgb) / <alpha>) */
+  --brand-light-rgb: 87, 192, 101;
+  --pill-dark: var(--bg-dark-1);       /* #0d2410 — DONATE pill, deeper than the navbar */
+
+  /* Member Portal page background (the dark-green end of DCP's palette) */
+  --portal-from: #0d2410;
+  --portal-via: #17401b;
+  --portal-to: #1f4f24;
+
   /* Hero photo overlay — echoes the gradient already used on the live
      DCP site's own hero image (dark green, fading toward the photo). */
   --hero-overlay: linear-gradient(120deg, rgba(13,26,15,.93) 0%, rgba(17,64,27,.82) 45%, rgba(23,64,27,.42) 100%);

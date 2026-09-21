@@ -40,11 +40,13 @@ dcp-uk-reform-template/
     ├── documents.html                ← Party documents / downloads
     ├── contact.html                  ← Contact form + chapter/national contact details
     ├── donate.html                   ← Donate — records pledges, shows bank-transfer details (Section 9)
+    ├── member-portal.html            ← Member Portal sign-in — UI only, lookup is a stub (Section 12)
     └── assets/
         ├── css/style.css             ← DCP's design tokens (imports shared/components.css)
         ├── js/forms.js               ← shared form helpers (API calls, field errors, payment-detail lists)
         ├── js/membership.js          ← Membership step flow + fee payment step
         ├── js/donate.js              ← Donate amount picker + pledge submission
+        ├── js/member-portal.js       ← Member Portal form: stubbed handleMemberLookup()
         └── img/hero-placeholder.jpg  ← stand-in hero image — see Section 8, replace with the real photo
 ```
 
@@ -115,6 +117,10 @@ Reusable classes, each demonstrated in both `reform-clone/*.html` and `dcp-previ
 - `.form-card`, `.form-grid`, `.field` — the shared form-field styling used by both Contact and Donate
 - `.steps`, `.step` — numbered step list (Membership page: how to join)
 - `.amount-grid`, `.amount-btn`, `.toggle-row` — donation amount picker + one-off/monthly toggle (Donate page only, see Section 9)
+- `.button` + `.button.dark` / `.button.primary` — the header CTA pills (DONATE / JOIN). 48px tall, pill radius, `--brand` fill; JOIN carries an arrow-disc SVG filled with `--brand-deep`. They run one size down inside `.nav-links` so the header stays on a single row, and go full width in the mobile menu.
+- `.portal-btn` / `.portal-btn__circle` — 44px circular Member Portal icon button; its label shows only in the mobile menu
+- `.portal-page`, `.portal-card`, `.portal-form`, `.portal-submit` — the Member Portal sign-in page: dark gradient, faint 60px grid, glass card
+- `.card-row.cols-3` — three cards across, dropping to two and then one on smaller screens
 - `.notice-box` — pale callout box for disclaimers/caveats (used on Donate for the "how donations are paid" and compliance notices, and elsewhere for short warnings)
 - `.form-step` — a `<fieldset>` per step of a multi-step form (Membership); only the current step is shown
 - `.form-alert` (+ `.success`), `.field.invalid`, `.field-error` — form-level and per-field validation messages returned by the backend
@@ -247,3 +253,34 @@ A small Node.js service (Express 5 + MySQL/MariaDB via `mysql2`, so the data can
 The API contract above and the validation rules in `server/lib/validate.js` are the parts to keep consistent.
 
 **Not included:** confirmation emails, card or Direct Debit payments, and HTTPS termination (put it behind an HTTPS proxy and set `TRUST_PROXY=1`).
+
+---
+
+## 12. Header button set and Member Portal
+
+Added from the header/portal design spec, re-coloured in DCP's own palette (the reference design's cyan is not used anywhere).
+
+**Header (every page).** After the nav links: **DONATE** (`.button.dark`, deep green `--pill-dark`), **JOIN** (`.button.primary`, `--brand` green with the arrow-disc SVG in `--brand-deep`), then the circular **Member Portal** icon button. The old REGISTER pill became JOIN, and the notice bar's CTA matches. The admin LOGIN button was removed from the navbar: the admin area is now reached at `/admin/` directly, which shows its own sign-in box.
+
+In the mobile menu (below 900px) DONATE and JOIN go full width and the portal icon gains a "MEMBER PORTAL" label.
+
+**Brand token.** `--brand` and its variants live in `dcp-preview/assets/css/style.css` and point at DCP's greens, so the whole button set and portal page can be re-coloured from one place:
+
+| Token | Value | Used for |
+|---|---|---|
+| `--brand` | `#24592a` (`--accent`) | JOIN pill, portal icon tile |
+| `--brand-hover` | `#57c065` (`--accent-light`) | Portal button, links, hover states on dark |
+| `--brand-deep` | `#173f1b` (`--accent-strong`) | Arrow disc inside JOIN |
+| `--brand-bright` | `#6ccd79` | Portal button hover |
+| `--pill-dark` | `#0d2410` (`--bg-dark-1`) | DONATE pill |
+| `--portal-from/via/to` | `#0d2410` / `#17401b` / `#1f4f24` | Member Portal background gradient |
+
+**Member Portal page** (`/member-portal`): full-viewport dark-green gradient with a faint 60px grid at 3% opacity, the DCP wordmark above a 448px glass card (`rgb(255 255 255 / .10)`, 24px radius, 24px backdrop blur), an 80px icon tile, "Member Portal" at 36px/900, email field with an inline icon, and a full-width Continue button. Below: helper text, a "Join DCP UK" link and "Back to homepage".
+
+The portal page's Continue button uses the **bright** green with dark text rather than `--brand`: the deep brand green does not have enough contrast against that dark card.
+
+**No member login exists yet.** `assets/js/member-portal.js` has a stubbed `handleMemberLookup(email)` with a TODO, plus real loading and error states. It currently shows "not connected yet". To finish it, the backend needs member portal credentials or magic links; the `members` table has no such fields, and `/api/admin/*` is staff-only.
+
+**Fonts:** the design spec asks for Gotham/Montserrat, but the site keeps Inter throughout (SPEC Section 3 explains why), and no external font is loaded — the strict Content-Security-Policy allows no third-party origins.
+
+**Routes:** `/donate`, `/join` and `/member-portal` are served by `server.js`; the `.html` URLs still work.
