@@ -84,7 +84,8 @@
    weight/tracking than Reform's condensed display face — Inter Black
    doesn't have the same built-in condensed proportions as Gotham. */
 .hero-title, .section-title { text-transform: none; letter-spacing: -0.02em; }
-.nav-links { text-transform: uppercase; font-size: 13px; letter-spacing: 0.03em; }
+/* 12px keeps ten nav links, the two CTA pills and the logo on one row. */
+.nav-links { text-transform: uppercase; font-size: 12px; letter-spacing: 0.02em; }
 .eyebrow, .section-eyebrow { text-transform: uppercase; }
 
 /* DCP's motto/quote callouts use a left accent bar in the brick-red

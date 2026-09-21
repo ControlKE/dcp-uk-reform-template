@@ -47,7 +47,8 @@ dcp-uk-reform-template/
         ├── js/membership.js          ← Membership step flow + fee payment step
         ├── js/donate.js              ← Donate amount picker + pledge submission
         ├── js/member-portal.js       ← Member Portal form: stubbed handleMemberLookup()
-        └── img/dcp-rally.jpg         ← the real hero photo from dcp-kenya.co.ke (see Section 8)
+        ├── img/dcp-rally.jpg         ← the real hero photo from dcp-kenya.co.ke (see Section 8)
+        └── img/dcp-logo.png          ← the real DCP logo, used by the navbar and footer
 ```
 
 To preview the whole site, run it through the backend: `npm install` then `npm start` in this folder, and open `http://localhost:3000/` (admin area at `/admin/`). In VS Code you can also press F5 and choose **DCP UK: site + backend**. Most pages are still static HTML/CSS and open fine straight from disk, but the Membership and Donate forms need the server. Every nav link, footer link and in-page cross-link across all 11 `dcp-preview` pages resolves to a real page in this bundle (no `#` placeholders left in the nav or footer).
@@ -149,7 +150,7 @@ Every page above links to every other relevant page — nav, footer, and in-page
 ## 6. Content, image and colour swap checklist for Claude Code
 
 - [ ] Replace all `[bracketed placeholders]` — none should ship; `dcp-preview/index.html` already shows the fully-substituted version for Home
-- [ ] Logo: swap the text "DCP" wordmark placeholder for DCP's actual logo mark (the concentric-circle "listening ear" icon seen on the live site) — don't just set text, use the real SVG/PNG
+- [x] Logo: done — the real logo (`assets/img/dcp-logo.png`, 322×156, taken unchanged from dcp-kenya.co.ke) now sits in the navbar brand link and the footer brand block, beside the existing "DCPUK" wordmark. Sized by height with `width: auto`, so the aspect ratio is kept: 48px in the navbar (40px on phones) and 48px in the footer. Both sit on a white plate (`#fff`, 6px radius, 4px padding) because the file carries a solid white background and both bars are dark green.
 - [x] Hero photo: done — `dcp-preview/index.html` now uses the real photo (`assets/img/dcp-rally.jpg`, taken from the live dcp-kenya.co.ke hero) with that site's exact gradient overlay. See Section 8.
 - [ ] Leadership/Chapters photos: `leadership.html` and `chapters.html` currently show "Photo to follow" placeholder panels (`.person-card`/`.list-card` with no image) rather than invented photos — replace with real photos as/when DCP has them for each named role or chapter; don't source stand-in photos of real people
 - [ ] Every placeholder `[Image]` / grey box in `reform-clone/*.html` needs a real DCP photo when adapted — none of Reform's actual photography should be used (it's Reform's own brand asset, not DCP's)

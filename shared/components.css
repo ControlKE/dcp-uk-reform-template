@@ -50,7 +50,17 @@ ul { list-style: none; margin: 0; padding: 0; }
   padding: 14px 0;
 }
 .navbar .container { display: flex; align-items: center; justify-content: space-between; width: 100%; flex-wrap: wrap; row-gap: 10px; column-gap: 20px; }
-.brand { display: flex; align-items: baseline; gap: 2px; font-family: var(--font-display); font-weight: 800; font-size: 24px; letter-spacing: -0.01em; color: var(--text-on-dark); }
+.brand { display: flex; align-items: center; gap: 2px; flex-shrink: 0; font-family: var(--font-display); font-weight: 800; font-size: 24px; letter-spacing: -0.01em; color: var(--text-on-dark); }
+.brand-text { display: flex; align-items: baseline; gap: 2px; }
+/* Logo is sized by height only, so its 322x156 aspect ratio is kept. The
+   12px space sits on the logo rather than the brand's gap, so a text-only
+   brand (reform-clone) keeps its tight "DCP"+"UK" spacing. */
+/* The logo file carries a solid white background, and this navbar is dark
+   green (the reference site's is white), so it gets the same rounded white
+   plate the footer uses. The logo itself is untouched. */
+/* 3.5rem box minus 0.25rem padding on each side leaves the logo itself at
+   3rem (48px), the same rendered height as on the reference site. */
+.brand-logo { height: 3.5rem; width: auto; margin-right: 0.75rem; background: #fff; border-radius: 0.375rem; padding: 0.25rem; }
 .brand span.accent { color: var(--accent-light); }
 .nav-links { display: flex; align-items: center; flex-wrap: wrap; row-gap: 8px; gap: 14px; font-family: var(--font-display); font-weight: 600; font-size: 15px; letter-spacing: 0.02em; }
 .nav-links a { color: var(--text-on-dark); padding: 8px 2px; transition: color .15s ease; }
@@ -182,7 +192,10 @@ ul { list-style: none; margin: 0; padding: 0; }
 .footer-col ul li { margin-bottom: 12px; font-size: 14px; color: var(--text-on-dark-muted); }
 .footer-col ul li a:hover { color: var(--accent-light); }
 .footer-legal { border-top: 1px solid var(--border-on-dark); padding-top: 28px; text-align: center; font-size: 13px; color: var(--text-on-dark-muted); line-height: 1.8; }
-.footer-brand { text-align: center; font-family: var(--font-display); font-weight: 800; font-size: 26px; margin: 28px 0 14px; }
+.footer-brand { display: flex; align-items: center; justify-content: center; gap: 2px; font-family: var(--font-display); font-weight: 800; font-size: 26px; margin: 28px 0 14px; }
+/* The white plate keeps the logo legible on the dark green footer. */
+.footer-logo { height: 3.5rem; width: auto; margin-right: 0.75rem; background: #fff; border-radius: 0.375rem; padding: 0.25rem; }
+.footer-brand-text { display: flex; align-items: baseline; gap: 2px; }
 .footer-links { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; font-size: 13px; color: var(--text-on-dark-muted); }
 
 /* ---- Inner-page hero (shorter hero used on every non-home page) -------- */
@@ -360,7 +373,7 @@ ul { list-style: none; margin: 0; padding: 0; }
 
 /* In the navbar the pills sit beside ten nav links, so they run a size down
    to keep the header on one row. The full 48px size is used elsewhere. */
-.nav-links { gap: 10px; }
+.nav-links { gap: 8px; }
 .nav-links .button { height: 2.5rem; font-size: 1rem; padding: 0.375rem 1rem; }
 .nav-links .button.primary { padding-right: 2rem; }
 .nav-links .button.primary svg { width: 30px; height: 30px; transform: translateX(0.95rem); }
@@ -483,6 +496,8 @@ ul { list-style: none; margin: 0; padding: 0; }
     border-top: 1px solid var(--border-on-dark);
   }
   .nav-toggle-checkbox:checked ~ .nav-links { display: flex; }
+  /* A size down so the logo never crowds the hamburger on phones (40px logo). */
+  .brand-logo { height: 3rem; margin-right: 0.5rem; }
   .nav-links a, .nav-links .btn { width: 100%; }
   .nav-links .nav-sep { display: none; }
   /* Mobile menu: DONATE and JOIN full width, Member Portal as a labelled row */
