@@ -14,7 +14,7 @@ npm start
 - Site: http://localhost:3000/
 - Admin area: http://localhost:3000/admin/
 
-Sign in at `/admin/` (the navbar's person icon is the Member Portal, not the admin). Then go to **Payment accounts** and enter where the membership fee and donations should be paid.
+Sign in at `/admin/`: the person icon at the end of the navbar goes straight there. Then go to **Payment accounts** and enter where the membership fee and donations should be paid.
 
 ## Admin login
 

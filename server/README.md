@@ -4,7 +4,7 @@ Serves the `dcp-preview` site and adds:
 
 - **Membership registration.** The 5-step form on `membership.html` saves applications and then shows the fee payment details, with a unique reference such as `DCPUK-7KQ2MX`.
 - **Donation pledges.** `donate.html` records the pledge and then shows the chapter's UK bank details, with a reference such as `DON-4HT9PB`.
-- **Admin area** at `/admin/` (the navbar's person icon is the Member Portal, not the admin). It's a dashboard with a sidebar, stat cards, filterable tables and toasts, in the DCP colours. The files are `admin/index.html`, `admin/admin.css` and `admin/admin.js`. It loads only the site's colour tokens (`dcp-preview/assets/css/tokens.css`), none of its page styles, and it follows the device's light or dark mode.
+- **Admin area** at `/admin/`, reached from the person icon at the end of the navbar. It's a dashboard with a sidebar, stat cards, filterable tables and toasts, in the DCP colours. The files are `admin/index.html`, `admin/admin.css` and `admin/admin.js`. It loads only the site's colour tokens (`dcp-preview/assets/css/tokens.css`), none of its page styles, and it follows the device's light or dark mode.
   - **Overview:** counts of members, pending reviews, fee payments to check and donations received, plus shortcuts to what needs attention.
   - **Payment accounts:** set where the membership fee goes (M-Pesa Paybill, M-Pesa Till or a bank account) and the UK bank account for donations. The public pages read these details live.
   - **Members:** search and filter every registration, open a member's full details, approve or reject, confirm fee payments, add notes, export to CSV, and permanently delete a record (for data-erasure requests).
