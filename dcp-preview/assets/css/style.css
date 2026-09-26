@@ -7,78 +7,8 @@
    ========================================================================== */
 
 @import url('../../../shared/components.css');
+@import url('tokens.css');   /* the :root colour/type tokens */
 
-:root {
-  /* ---- Colour tokens (sampled from the live DCP UK site + Kenyan flag
-     palette: black / red / green / white, which DCP's own greens and the
-     motto card's maroon accent already draw from) ------------------------ */
-  --bg-dark-1: #0d2410;      /* deepest hero background (was navy) */
-  --bg-dark-2: #17401b;      /* primary dark section / navbar (DCP region-bar green) */
-  --bg-dark-3: #1f4f24;      /* raised dark panel / card */
-  --bg-dark-4: #24592a;      /* lighter dark panel / DCP primary button green */
-  --bg-light: #ffffff;
-  --bg-light-tint: #e9f2e4;  /* DCP's light green section tint */
-
-  --text-on-dark: #ffffff;
-  --text-on-dark-muted: rgba(255, 255, 255, 0.68);
-  --text-on-light: #14201a;
-  --text-on-light-muted: #4b5f52;
-
-  --accent: #24592a;         /* DCP primary green (was Reform teal) — used for
-                                 buttons and text/borders on LIGHT backgrounds */
-  --accent-strong: #173f1b;
-  --accent-soft: rgba(36, 89, 42, 0.12);
-  --accent-contrast: #ffffff;
-
-  /* DCP's brand green is dark, so it has poor contrast used as text on a
-     dark background (unlike Reform's light teal, which works everywhere).
-     This brighter green is used instead anywhere accent text/borders sit
-     on a dark surface — ticker, navbar, hero, dark section eyebrows. */
-  --accent-light: #57c065;
-
-  /* DCP's secondary/motto accent — a muted brick red, echoing the Kenyan
-     flag's red band. Use sparingly (eyebrow underlines, small accents),
-     the way Reform uses teal as its one accent colour. */
-  --accent-2: #7a2e22;
-
-  --border-on-dark: rgba(255, 255, 255, 0.14);
-  --border-on-light: #dbe6dc;
-
-  /* DCP's live site is set in Inter — keep that rather than importing
-     Reform's Gotham/Montserrat pairing. */
-  --font-display: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-body: "Inter", ui-sans-serif, system-ui, sans-serif;
-
-  --radius-pill: 999px;
-  --radius-card: 16px;
-  --radius-card-lg: 24px;
-  --nav-height: 84px;
-  --ticker-height: 40px;
-  --container-max: 1280px;
-  --gutter: 24px;
-
-  --shadow-card: 0 20px 40px -20px rgba(0, 0, 0, 0.35);
-
-  /* ---- Brand token for the header button set and Member Portal ----------
-     One token so the accent can be swapped later. It points at DCP's own
-     green rather than the reference design's cyan. */
-  --brand: var(--accent);              /* #24592a — pill fill, links, focus ring */
-  --brand-hover: var(--accent-light);  /* #57c065 — hover on dark surfaces */
-  --brand-deep: var(--accent-strong);  /* #173f1b — arrow disc on the JOIN pill */
-  --brand-bright: #6ccd79;             /* hover for the bright-green CTA on dark panels */
-  --brand-rgb: 36, 89, 42;             /* for rgb(var(--brand-rgb) / <alpha>) */
-  --brand-light-rgb: 87, 192, 101;
-  --pill-dark: var(--bg-dark-1);       /* #0d2410 — DONATE pill, deeper than the navbar */
-
-  /* Member Portal page background (the dark-green end of DCP's palette) */
-  --portal-from: #0d2410;
-  --portal-via: #17401b;
-  --portal-to: #1f4f24;
-
-  /* Hero photo overlay — the exact gradient used on the live dcp-kenya.co.ke
-     hero. Do not change the angle, stops or alpha values. */
-  --hero-overlay: linear-gradient(135deg, rgba(23,64,27,0.92) 0%, rgba(36,90,42,0.78) 60%, rgba(17,17,17,0.6) 100%);
-}
 
 /* Headings in the DCP theme read better at a slightly less extreme
    weight/tracking than Reform's condensed display face — Inter Black
