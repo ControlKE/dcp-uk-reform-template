@@ -49,7 +49,9 @@ ul { list-style: none; margin: 0; padding: 0; }
   background: var(--bg-dark-2);
   padding: 14px 0;
 }
-.navbar .container { display: flex; align-items: center; justify-content: space-between; width: 100%; flex-wrap: wrap; row-gap: 10px; column-gap: 20px; }
+/* One row, always: below the collapse breakpoint the menu becomes the
+   hamburger panel instead of wrapping (see "Collapsed navbar" below). */
+.navbar .container { display: flex; align-items: center; justify-content: space-between; width: 100%; flex-wrap: nowrap; column-gap: 20px; }
 .brand { display: flex; align-items: center; gap: 2px; flex-shrink: 0; font-family: var(--font-display); font-weight: 800; font-size: 24px; letter-spacing: -0.01em; color: var(--text-on-dark); }
 .brand-text { display: flex; align-items: baseline; gap: 2px; }
 /* Logo is sized by height only, so its 322x156 aspect ratio is kept. The
@@ -58,11 +60,12 @@ ul { list-style: none; margin: 0; padding: 0; }
 /* The logo file carries a solid white background, and this navbar is dark
    green (the reference site's is white), so it gets the same rounded white
    plate the footer uses. The logo itself is untouched. */
-/* 3.5rem box minus 0.25rem padding on each side leaves the logo itself at
-   3rem (48px), the same rendered height as on the reference site. */
-.brand-logo { height: 3.5rem; width: auto; margin-right: 0.75rem; background: #fff; border-radius: 0.375rem; padding: 0.25rem; }
+/* 2.75rem (44px) box minus 0.1875rem padding on each side leaves the logo
+   itself at ~38px, small enough for the brand, ten links and the CTAs to
+   share one row. */
+.brand-logo { height: 2.75rem; width: auto; margin-right: 0.5rem; background: #fff; border-radius: 0.375rem; padding: 0.1875rem; }
 .brand span.accent { color: var(--accent-light); }
-.nav-links { display: flex; align-items: center; flex-wrap: wrap; row-gap: 8px; gap: 14px; font-family: var(--font-display); font-weight: 600; font-size: 15px; letter-spacing: 0.02em; }
+.nav-links { display: flex; align-items: center; flex-wrap: nowrap; white-space: nowrap; gap: 14px; font-family: var(--font-display); font-weight: 600; font-size: 15px; letter-spacing: 0.02em; }
 .nav-links a { color: var(--text-on-dark); padding: 8px 2px; transition: color .15s ease; }
 .nav-links a:hover { color: var(--accent-light); }
 .nav-sep { color: var(--border-on-dark); }
@@ -153,7 +156,8 @@ ul { list-style: none; margin: 0; padding: 0; }
 .doc-card .link { color: var(--accent-light); font-weight: 700; font-size: 14px; }
 
 /* ---- Feature split (policy showcase) ---------------------------------- */
-.feature-split { display: grid; grid-template-columns: 0.8fr 1.2fr; gap: 64px; align-items: center; }
+/* Pages can set their own column split with --split; it still stacks on mobile. */
+.feature-split { display: grid; grid-template-columns: var(--split, 0.8fr 1.2fr); gap: 64px; align-items: center; }
 .feature-split img { border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
 .feature-split h3 { font-family: var(--font-display); font-weight: 900; font-size: clamp(28px, 4vw, 44px); text-transform: uppercase; margin: 12px 0 18px; }
 .feature-split p { font-size: 16px; line-height: 1.6; margin-bottom: 28px; max-width: 480px; }
@@ -505,25 +509,31 @@ ul { list-style: none; margin: 0; padding: 0; }
 @media (max-width: 560px) { .pay-details { grid-template-columns: 1fr; gap: 2px; } .pay-details dd { margin-bottom: 10px; } }
 
 /* ---- Responsive ------------------------------------------------------------ */
-@media (max-width: 900px) {
-  .ticker-items { display: none; }
+
+/* Collapsed navbar. The full menu needs ~1,170px on one row (brand, ten
+   links, DONATE, JOIN and the portal icon), so below 1280px it switches to
+   the hamburger panel rather than wrapping onto a second row. The spare
+   room covers the scrollbar and fallback fonts that render wider than Inter. */
+@media (max-width: 1279px) {
   .nav-toggle-btn { display: block; }
   .nav-links {
     display: none;
     position: absolute;
-    top: var(--nav-height);
+    top: 100%;
     left: 0;
     right: 0;
+    max-height: calc(100vh - var(--nav-height));
+    overflow-y: auto;
+    white-space: normal;
     background: var(--bg-dark-2);
     flex-direction: column;
     align-items: flex-start;
     gap: 4px;
     padding: 16px var(--gutter) 24px;
     border-top: 1px solid var(--border-on-dark);
+    box-shadow: 0 16px 24px -12px rgba(0, 0, 0, 0.4);
   }
   .nav-toggle-checkbox:checked ~ .nav-links { display: flex; }
-  /* A size down so the logo never crowds the hamburger on phones (40px logo). */
-  .brand-logo { height: 3rem; margin-right: 0.5rem; }
   .nav-links a, .nav-links .btn { width: 100%; }
   .nav-links .nav-sep { display: none; }
   /* Mobile menu: DONATE and JOIN full width, Member Portal as a labelled row */
@@ -536,6 +546,10 @@ ul { list-style: none; margin: 0; padding: 0; }
     display: inline; font-family: var(--font-display); font-size: 13px; font-weight: 700;
     letter-spacing: .03em; text-transform: uppercase; color: var(--text-on-dark);
   }
+}
+
+@media (max-width: 900px) {
+  .ticker-items { display: none; }
   .stat-grid { grid-template-columns: repeat(2, 1fr); }
   .feature-split, .newsletter-grid { grid-template-columns: 1fr; }
   .footer-grid { grid-template-columns: 1fr; }

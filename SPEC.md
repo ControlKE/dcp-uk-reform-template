@@ -110,7 +110,7 @@ Reusable classes, each demonstrated in both `reform-clone/*.html` and `dcp-previ
 - `.newsletter`, `.newsletter-form` — email capture block (Reform: "Reform Daily"). DCP equivalent would be a chapter mailing list / WhatsApp broadcast sign-up if one exists — otherwise skip this section, it's optional.
 - `.footer`, `.footer-grid`, `.footer-col`, `.footer-legal`, `.footer-brand`, `.footer-links` — 3-column footer + legal strip + centred wordmark. DCP's real footer content (pages/get-involved/resources columns + the regulatory disclaimer paragraph) is already wired into `dcp-preview/index.html`.
 - `.wave-divider` — SVG curved section divider (decorative; optional, Reform uses it between dark/light sections)
-- `.nav-toggle-checkbox` / `.nav-toggle-btn` — **new, pure-CSS mobile nav.** A hidden checkbox + label (hamburger icon) toggles `.nav-links` open/closed below the `~1100px` breakpoint via a sibling selector — no JavaScript. This resolves the hamburger/drawer gap flagged as "not yet built" in the previous version of this spec (Section 2, option A).
+- `.nav-toggle-checkbox` / `.nav-toggle-btn` — **new, pure-CSS mobile nav.** A hidden checkbox + label (hamburger icon) toggles `.nav-links` open/closed below 1280px via a sibling selector — no JavaScript. Above 1280px the brand and every menu item share one row (`flex-wrap: nowrap`); below it the menu collapses to the hamburger instead of wrapping. The full row needs ~1,190px with Inter, so 1280px leaves room for a scrollbar. This resolves the hamburger/drawer gap flagged as "not yet built" in the previous version of this spec (Section 2, option A).
 - `.page-hero` — smaller inner-page version of `.hero` (breadcrumb + title + one-line sub, no photo/buttons) — used at the top of every page except Home
 - `.prose` — long-form text wrapper (About, Documents) — headings, paragraphs, lists, `<blockquote>` all styled consistently
 - `.simple-card`, `.person-card`, `.list-card` — light content cards used for the Guiding Principles grid, Leadership profiles, and Chapters list respectively
@@ -150,7 +150,7 @@ Every page above links to every other relevant page — nav, footer, and in-page
 ## 6. Content, image and colour swap checklist for Claude Code
 
 - [ ] Replace all `[bracketed placeholders]` — none should ship; `dcp-preview/index.html` already shows the fully-substituted version for Home
-- [x] Logo: done — the real logo (`assets/img/dcp-logo.png`, 322×156, taken unchanged from dcp-kenya.co.ke) now sits in the navbar brand link and the footer brand block, beside the existing "DCPUK" wordmark. Sized by height with `width: auto`, so the aspect ratio is kept: 48px in the navbar (40px on phones) and 48px in the footer. Both sit on a white plate (`#fff`, 6px radius, 4px padding) because the file carries a solid white background and both bars are dark green.
+- [x] Logo: done — the real logo (`assets/img/dcp-logo.png`, 322×156, taken unchanged from dcp-kenya.co.ke) now sits in the navbar brand link and the footer brand block, beside the existing "DCPUK" wordmark. Sized by height with `width: auto`, so the aspect ratio is kept: 38px in the navbar (a 44px white plate, small enough to keep the header on one row) and 48px in the footer. Both sit on a white plate (`#fff`, 6px radius, 4px padding) because the file carries a solid white background and both bars are dark green.
 - [x] Hero photo: done — `dcp-preview/index.html` now uses the real photo (`assets/img/dcp-rally.jpg`, taken from the live dcp-kenya.co.ke hero) with that site's exact gradient overlay. See Section 8.
 - [ ] Leadership/Chapters photos: `leadership.html` and `chapters.html` currently show "Photo to follow" placeholder panels (`.person-card`/`.list-card` with no image) rather than invented photos — replace with real photos as/when DCP has them for each named role or chapter; don't source stand-in photos of real people
 - [ ] Every placeholder `[Image]` / grey box in `reform-clone/*.html` needs a real DCP photo when adapted — none of Reform's actual photography should be used (it's Reform's own brand asset, not DCP's)
@@ -266,7 +266,7 @@ Added from the header/portal design spec, re-coloured in DCP's own palette (the 
 
 **Header (every page).** After the nav links: **DONATE** (`.button.dark`, deep green `--pill-dark`), **JOIN** (`.button.primary`, `--brand` green with the arrow-disc SVG in `--brand-deep`), then the circular **Member Portal** icon button. The old REGISTER pill became JOIN, and the notice bar's CTA matches. The admin LOGIN button was removed from the navbar: the admin area is now reached at `/admin/` directly, which shows its own sign-in box.
 
-In the mobile menu (below 900px) DONATE and JOIN go full width and the portal icon gains a "MEMBER PORTAL" label.
+In the mobile menu (below 1280px) DONATE and JOIN go full width and the portal icon gains a "MEMBER PORTAL" label.
 
 **Brand token.** `--brand` and its variants live in `dcp-preview/assets/css/style.css` and point at DCP's greens, so the whole button set and portal page can be re-coloured from one place:
 
