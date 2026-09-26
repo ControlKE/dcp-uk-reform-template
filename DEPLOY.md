@@ -46,7 +46,7 @@ The app creates its own tables on first start, so there's nothing to import.
 
 1. Open `https://<your-address>/` — the site.
 2. Click the **Member Portal icon** → it opens the sign-in popup, which is not the admin area. For admin, go to `https://<your-address>/admin/`.
-3. Sign in with the `ADMIN_EMAIL` and `ADMIN_PASSWORD` you set.
+3. Sign in with the `ADMIN_EMAIL` and `ADMIN_PASSWORD` you set. Can't get in? Editing `ADMIN_PASSWORD` won't help once the account exists; reset it instead with `railway ssh`, then `npm run admin:reset -- --email you@example.com --generate` (details under "Admin login" in the README).
 4. Go to **Payment accounts** and enter the real membership fee account and the donations bank account. **Until you do, donations stay closed and registrations can't show payment details.**
 
 ## 5. Your own domain (optional)

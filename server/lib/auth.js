@@ -61,6 +61,14 @@ async function ensureConfiguredAdmin() {
   return email;
 }
 
+// The placeholder password from .env.example. An admin still using it gets a
+// warning at startup so it's changed before anyone else finds it.
+const EXAMPLE_PASSWORD = 'change-me-at-least-10-chars';
+async function adminsWithExamplePassword() {
+  const admins = await db.query('SELECT username, password_hash FROM admins');
+  return admins.filter((a) => verifyPassword(EXAMPLE_PASSWORD, a.password_hash)).map((a) => a.username);
+}
+
 // A dummy hash so failed lookups take as long as real password checks.
 const DUMMY_HASH = hashPassword(crypto.randomBytes(12).toString('hex'));
 
@@ -130,7 +138,7 @@ function clearLoginFailures(ip) { failures.delete(ip); }
 module.exports = {
   SESSION_TTL_MS,
   hashPassword, verifyPassword, validateNewPassword,
-  createAdmin, ensureConfiguredAdmin, checkCredentials,
+  createAdmin, ensureConfiguredAdmin, checkCredentials, adminsWithExamplePassword,
   createSession, sessionCookie, getSessionAdmin, destroySession, requireAdmin,
   loginBlocked, recordLoginFailure, clearLoginFailures,
   sha256,

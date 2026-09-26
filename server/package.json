@@ -10,7 +10,8 @@
   },
   "scripts": {
     "start": "node server.js",
-    "create-admin": "node scripts/create-admin.js"
+    "create-admin": "node scripts/create-admin.js",
+    "admin:reset": "node scripts/admin-reset.js"
   },
   "dependencies": {
     "express": "^5.1.0",

@@ -393,6 +393,7 @@ app.use((err, req, res, next) => {
     process.exit(1);
   }
   const seeded = await auth.ensureConfiguredAdmin();
+  const weakAdmins = await auth.adminsWithExamplePassword();
   app.listen(PORT, HOST, () => {
     const base = `http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`;
     console.log(`Database:      ${db.config.database} on ${db.config.host}:${db.config.port} (manage it in phpMyAdmin)`);
@@ -400,6 +401,10 @@ app.use((err, req, res, next) => {
     console.log(`Admin area:    ${base}/admin/`);
     const where = IN_PRODUCTION ? 'the host\'s environment variables' : 'server/.env';
     if (seeded) console.log(`Admin login:   ${seeded} (password set in ${where})`);
-    else console.log(`No ADMIN_EMAIL / ADMIN_PASSWORD in ${where}: add them, or run npm run create-admin -- <email>.`);
+    else console.log(`No ADMIN_EMAIL / ADMIN_PASSWORD in ${where}: add them, or run npm run admin:reset -- --email <email>.`);
+    for (const name of weakAdmins) {
+      console.warn(`WARNING: admin "${name}" still uses the example password from .env.example. Change it now: npm run admin:reset -- --email ${name}`);
+    }
+    if (IN_PRODUCTION && !db.config.password) console.warn('WARNING: the database user has no password. Set one before going live.');
   });
 })();

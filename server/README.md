@@ -26,7 +26,7 @@ All data is stored in a MySQL-compatible database, so you can browse and back it
 
 The database and tables are created automatically the first time the server starts.
 
-Edit data through the admin area where you can. The admin area checks sort codes, IBANs and so on, and phpMyAdmin doesn't. Never edit `password_hash` by hand; use **Admin users** or `npm run create-admin`.
+Edit data through the admin area where you can. The admin area checks sort codes, IBANs and so on, and phpMyAdmin doesn't. Never edit `password_hash` by hand; use **Admin users** or `npm run admin:reset -- --email <email>`.
 
 ## Run it
 
@@ -53,7 +53,7 @@ Everything machine-specific lives in `server/.env`. It's in `.gitignore`, so it'
 | `PORT` / `HOST` | `3000` / `127.0.0.1` | Web server. Set `HOST=0.0.0.0` to accept connections from other machines. |
 | `TRUST_PROXY` | unset | Set to `1` behind a reverse proxy that terminates HTTPS |
 
-To add more admins, use **Admin users** in the admin area, or run `npm run create-admin -- name@example.com`.
+To add more admins, use **Admin users** in the admin area, or run `npm run admin:reset -- --email name@example.com` (it creates the admin if missing, or resets the password if it exists). See "Admin login" in the main README.
 
 ## Before putting it online
 

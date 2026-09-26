@@ -6,7 +6,8 @@
   "scripts": {
     "postinstall": "npm --prefix server install",
     "start": "npm --prefix server start",
-    "create-admin": "npm --prefix server run create-admin --"
+    "create-admin": "npm --prefix server run create-admin --",
+    "admin:reset": "npm --prefix server run admin:reset --"
   },
   "engines": {
     "node": ">=22.13"
