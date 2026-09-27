@@ -89,6 +89,10 @@ const FOOTER = '\nSET FOREIGN_KEY_CHECKS = 1;\n';
 async function* dumpSql({ tables = null, structure = true, data = true, database, label = 'database backup' } = {}) {
   const conn = await rawConnection(database);
   try {
+    // One consistent snapshot of every InnoDB table, like mysqldump --single-transaction:
+    // the app keeps running and the dump still matches a single moment.
+    await conn.query('SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+    await conn.query('START TRANSACTION WITH CONSISTENT SNAPSHOT');
     const all = await listTables(conn);
     const chosen = tables ? all.filter((t) => tables.includes(t)) : all;
     yield HEADER(label);

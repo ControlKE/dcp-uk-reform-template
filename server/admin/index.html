@@ -57,6 +57,7 @@
   <symbol id="i-receipt" viewBox="0 0 24 24"><path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16l-3-2-2 2-2-2-2 2-2-2-3 2M9 7h6M9 11h6M13 15h2"/></symbol>
   <symbol id="i-report" viewBox="0 0 24 24"><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M9 17v-4M12 17v-6M15 17v-2"/></symbol>
   <symbol id="i-trending-up" viewBox="0 0 24 24"><path d="m3 17 6-6 4 4 8-8M14 7h7v7"/></symbol>
+  <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></symbol>
   <symbol id="i-map-pin" viewBox="0 0 24 24"><circle cx="12" cy="11" r="3"/><path d="M17.66 16.66 13.41 20.9a2 2 0 0 1-2.82 0l-4.25-4.24a8 8 0 1 1 11.32 0"/></symbol>
   <symbol id="i-chart-pie" viewBox="0 0 24 24"><path d="M10 3.2A9 9 0 1 0 20.8 14a1 1 0 0 0-1-1H13a2 2 0 0 1-2-2V4a.9.9 0 0 0-1-.8"/><path d="M15 3.5A9 9 0 0 1 20.5 9H16a1 1 0 0 1-1-1z"/></symbol>
   <symbol id="i-filter-funnel" viewBox="0 0 24 24"><path d="M4 4h16v2.17a2 2 0 0 1-.59 1.42L15 12v7l-6 2v-8.5L4.52 7.56A2 2 0 0 1 4 6.21z"/></symbol>
@@ -155,6 +156,7 @@
       <p class="adm-nav-heading"><span class="adm-nav-label">Settings</span></p>
       <button type="button" data-tab="users" title="Admin users"><svg class="ic"><use href="#i-shield"/></svg><span class="adm-nav-label">Admin users</span></button>
       <button type="button" data-tab="audit" data-perm="audit.read" title="Audit log"><svg class="ic"><use href="#i-file"/></svg><span class="adm-nav-label">Audit log</span></button>
+      <button type="button" data-tab="database" data-perm="system" title="Database"><svg class="ic"><use href="#i-database"/></svg><span class="adm-nav-label">Database</span></button>
     </nav>
     <span class="adm-flag-stripe" aria-hidden="true"></span>
   </aside>
@@ -209,11 +211,13 @@
 
     <main class="adm-content" id="adm-content" tabindex="-1">
       <div class="adm-alert adm-alert-danger" id="mail-banner" role="alert" hidden></div>
+      <div class="adm-alert adm-alert-danger" id="maint-banner" role="alert" hidden></div>
 
       <!-- ---------------------------------------------------------- Overview -->
       <div data-panel="overview">
         <div class="adm-alert" id="setup-reminder" role="status" hidden></div>
         <div class="adm-alert" id="verifier-warning" role="status" hidden></div>
+        <div class="adm-alert" id="backup-status" role="status" hidden></div>
         <div class="adm-dash">
           <!-- Row 1: small stat cards + income growth -->
           <section class="adm-card adm-mini adm-span-mini" aria-labelledby="dash-new-title">
@@ -543,6 +547,44 @@
       </div>
 
       <!-- ---------------------------------------------------------- Audit log -->
+      <!-- ---------------------------------------------------------- Database (Super admin) -->
+      <div data-panel="database" hidden>
+        <div class="adm-form-cards">
+          <section class="adm-card adm-form-card" aria-labelledby="db-mig-title">
+            <div class="adm-card-header adm-card-header-rule">
+              <span class="adm-tile adm-tone-primary" aria-hidden="true"><svg class="ic"><use href="#i-database"/></svg></span>
+              <div><h2 class="adm-card-title" id="db-mig-title">Database updates</h2><p class="adm-muted">New versions of the site can change the database. In production those changes wait here until a Super admin applies them, after a backup. Until then the public site shows "back shortly".</p></div>
+            </div>
+            <div id="db-check"></div>
+            <div class="adm-db-scroll"><table class="adm-mini-table adm-db-table"><thead><tr><th scope="col">Change</th><th scope="col">Status</th></tr></thead><tbody id="db-mig-body"></tbody></table></div>
+            <form id="db-migrate-form" class="adm-db-apply" novalidate hidden>
+              <div class="form-alert" role="alert" hidden></div>
+              <label class="adm-db-confirm"><input type="checkbox" id="db-backup-ok"> <span>I have taken a backup of the live database and checked it (the off-site backup on the right, or <code>npm run db:export-data</code>).</span></label>
+              <button type="submit" class="adm-btn adm-btn-primary" id="db-apply" disabled>Apply updates</button>
+            </form>
+          </section>
+          <div class="adm-db-side">
+            <section class="adm-card adm-form-card" aria-labelledby="db-bk-title">
+              <div class="adm-card-header adm-card-header-rule">
+                <span class="adm-tile adm-tone-bright" aria-hidden="true"><svg class="ic"><use href="#i-upload"/></svg></span>
+                <div><h2 class="adm-card-title" id="db-bk-title">Off-site backups</h2><p class="adm-muted">A copy of the whole database every night in separate storage: 14 daily and 6 monthly copies. Test a restore once a month (DEPLOY.md).</p></div>
+              </div>
+              <div id="db-backup"></div>
+              <div class="adm-form-foot"><p class="adm-muted adm-meta" id="db-backup-meta"></p><button type="button" class="adm-btn adm-btn-outline" id="db-backup-now">Back up now</button></div>
+            </section>
+            <section class="adm-card adm-form-card" aria-labelledby="db-srv-title">
+              <div class="adm-card-header adm-card-header-rule">
+                <span class="adm-tile adm-tone-warning" aria-hidden="true"><svg class="ic"><use href="#i-clock"/></svg></span>
+                <div><h2 class="adm-card-title" id="db-srv-title">Server and background jobs</h2></div>
+              </div>
+              <dl class="adm-details" id="db-server"></dl>
+              <h3 class="adm-drawer-h">Recent jobs</h3>
+              <ul class="adm-timeline" id="db-jobs"></ul>
+            </section>
+          </div>
+        </div>
+      </div>
+
       <div data-panel="audit" hidden>
         <section class="adm-card adm-table-card" aria-labelledby="audit-title">
           <div class="adm-card-header"><div><h2 class="adm-card-title" id="audit-title">Audit log</h2><p class="adm-muted">Every change to money, members, pledges, settings and admins. Entries can never be edited or deleted.</p></div></div>

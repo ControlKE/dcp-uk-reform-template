@@ -7,7 +7,7 @@
   const PAYMENT_LABELS = { pending_payment: ['Not paid', 'bad'], payment_reported: ['Check payment', 'warn'], paid: ['Paid', 'good'] };
   const STATUS_LABELS = { pending: ['Pending', 'warn'], approved: ['Approved', 'good'], rejected: ['Rejected', 'bad'] };
   const DONATION_LABELS = { pledged: ['Pledged', 'warn'], received: ['Received', 'good'], cancelled: ['Cancelled', ''] };
-  const TAB_TITLES = { transactions: 'Transactions', reports: 'Reports', audit: 'Audit log', email: 'Email', overview: 'Dashboard', members: 'Members', donations: 'Donations', accounts: 'Payment accounts', users: 'Admin users' };
+  const TAB_TITLES = { database: 'Database', transactions: 'Transactions', reports: 'Reports', audit: 'Audit log', email: 'Email', overview: 'Dashboard', members: 'Members', donations: 'Donations', accounts: 'Payment accounts', users: 'Admin users' };
 
   // ------------------------------------------------------------ helpers
 
@@ -128,13 +128,14 @@
 
   async function boot() {
     const s = await api('GET', '/api/admin/session');
-    if (s.admin) return enterApp(s.admin, s.demo);
+    if (s.admin) return enterApp(s.admin, s.demo, s.maintenance);
     showView('login');
   }
 
-  function enterApp(admin, demo) {
+  function enterApp(admin, demo, maint) {
     me = admin;
     $('#adm-demo').hidden = !demo;
+    showMaintenance(maint);
     applyPerms();
     $('#adm-role-2').textContent = admin.roleLabel || 'Administrator';
     $('#pf-role').textContent = admin.roleLabel || 'Administrator';
@@ -147,7 +148,9 @@
     refreshBadges();
     loadMailStatus().catch(() => {});
     const { name, params } = parseHash();
-    openTab(name, params, { push: false });
+    // In maintenance mode only the Database page works: Super admins go straight to it.
+    if (maint?.on && canDo('system')) openTab('database', null, { push: false });
+    else if (!maint?.on) openTab(name, params, { push: false });
   }
 
   function fieldError(input, message) {
@@ -168,9 +171,9 @@
     const firstBad = [user, pass].find((i) => i.getAttribute('aria-invalid') === 'true');
     if (firstBad) { firstBad.focus(); return; }
     try {
-      const { admin, demo } = await busy(f, () => api('POST', '/api/admin/login', formValues(f)));
+      const { admin, demo, maintenance: maint } = await busy(f, () => api('POST', '/api/admin/login', formValues(f)));
       f.reset(); alertIn(f, '');
-      enterApp(admin, demo);
+      enterApp(admin, demo, maint);
     } catch (err) { alertIn(f, err.message); pass.select(); }
   });
   ['#l-user', '#l-pass'].forEach((s) => $(s).addEventListener('input', (e) => fieldError(e.currentTarget, '')));
@@ -271,6 +274,7 @@
     donations: () => tables.donations.load(),
     accounts: () => loadAccounts(),
     users: () => (canDo('admins.manage') ? tables.users.load() : Promise.resolve()),
+    database: () => loadDatabase(),
   };
   let currentTab = null;
 
@@ -465,6 +469,21 @@
       el('p', {}, el('strong', { text: 'Set up payment accounts. ' }), `You haven't saved ${missing.join(' or ')} yet. `,
         el('a', { href: '#accounts', text: 'Open Payment accounts', onclick: (e) => { e.preventDefault(); openTab('accounts'); } })),
       iconButton('x', 'Dismiss reminder', () => { reminder.hidden = true; store.session(dismissKey, '1'); }));
+
+    // Off-site backups (Super admins): red when there has been no good backup for 48 hours.
+    const bs = $('#backup-status');
+    bs.hidden = !d.backup;
+    if (d.backup) {
+      const b = d.backup;
+      const bad = b.stale && (b.production || b.configured);
+      bs.className = `adm-alert ${bad ? 'adm-alert-danger' : b.stale ? 'adm-alert-info' : 'adm-alert-success'}`;
+      const lead = !b.configured ? [el('strong', { text: 'Off-site backups are not set up. ' }), b.production ? 'Nothing is copied off the server. Set the S3_* variables (DEPLOY.md).' : 'Fine for local development; set them up on the live site.']
+        : b.lastSuccessAt ? [el('strong', { text: `Last successful backup: ${when(b.lastSuccessAt)}` }), ` (${ago(b.lastSuccessAt)}).${b.stale ? ` Older than ${b.staleHours} hours.` : ''}`]
+          : [el('strong', { text: 'No off-site backup has succeeded yet.' })];
+      bs.replaceChildren(icon(bad ? 'alert' : b.stale ? 'info' : 'check'), el('p', {}, ...lead,
+        b.lastFailure ? el('span', { class: 'adm-block', text: `Last attempt failed: ${b.lastFailure}` }) : '',
+        ' ', el('a', { href: '#database', text: 'Open Database', onclick: (e) => { e.preventDefault(); openTab('database'); } })));
+    }
 
     // Four-eyes on with fewer than two admins able to verify: nothing pending can be verified.
     const vw = $('#verifier-warning');
@@ -2453,6 +2472,7 @@
   const ACTION_TEXT = {
     'transaction.recorded': 'Recorded a payment', 'transaction.edited': 'Edited a pending payment', 'transaction.verified': 'Verified a payment',
     'transaction.reconciled': 'Reconciled a payment', 'transaction.rejected': 'Rejected a payment', 'transaction.voided': 'Voided a transaction',
+    'database.migrated': 'Applied database updates', 'database.migrate_failed': 'Database update failed', 'database.backup': 'Ran an off-site backup',
     'member.updated': 'Updated a member', 'member.rejected': 'Rejected a member', 'member.tier_confirmed': 'Confirmed a member\'s tier', 'member.tier_declined': 'Moved a member to Ordinary', 'member.deleted': 'Deleted a member', 'member.payment_synced': 'Payment status updated',
     'donation.updated': 'Updated a pledge', 'donation.cancelled': 'Cancelled a pledge', 'donation.status_synced': 'Pledge status updated',
     'settings.finance': 'Changed finance settings', 'settings.payment_account': 'Changed a payment account', 'tier.updated': 'Changed a tier',
@@ -2526,6 +2546,86 @@
       toast(on ? 'Four-eyes check is on.' : 'Four-eyes check is off. Self-verified payments will be flagged.', on ? 'success' : 'info');
       loadFinanceSettings();
     } catch (err) { alertIn(f, err.message); }
+  });
+
+  // ------------------------------------------------------------ maintenance mode and the Database page
+
+  const noteBox = (tone, text) => el('div', { class: `adm-alert adm-alert-${tone}` }, icon(tone === 'danger' ? 'alert' : tone === 'success' ? 'check' : 'info'), el('p', { text }));
+
+  function showMaintenance(m) {
+    const bn = $('#maint-banner');
+    bn.hidden = !m?.on;
+    if (!m?.on) return;
+    bn.replaceChildren(icon('alert'), el('p', {},
+      el('strong', { text: m.reason === 'manual' ? 'Maintenance mode is on (MAINTENANCE_MODE=true). ' : 'Maintenance mode: the database needs updating. ' }),
+      'The public site shows "back shortly". ',
+      canDo('system') ? (m.reason === 'manual' ? 'Remove MAINTENANCE_MODE and restart to end it.' : 'Take a backup, then apply the updates on the Database page.')
+        : 'A Super admin needs to apply the database updates; until then the rest of the admin is unavailable.'));
+  }
+
+  const ago = (sqlTime) => {
+    const h = (Date.now() - Date.parse(`${String(sqlTime).replace(' ', 'T')}Z`)) / 3600000;
+    return h < 1 ? `${Math.max(1, Math.round(h * 60))} min ago` : h < 48 ? `${Math.round(h)} hours ago` : `${Math.round(h / 24)} days ago`;
+  };
+  const kb = (n) => (n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
+
+  function renderDatabase(s) {
+    showMaintenance(s.maintenance);
+    $('#db-check').replaceChildren(...(s.check.ok ? [] : [noteBox('danger', `Safety check failed: ${s.check.message}`)]));
+    $('#db-mig-body').replaceChildren(...[...s.migrations].reverse().map((m) => el('tr', {},
+      el('td', {}, el('strong', { class: 'mono', text: m.id }), el('span', { class: 'adm-block adm-muted', text: m.description || '' })),
+      el('td', {}, m.appliedAt ? el('span', {}, badge(['Applied', 'good']), el('span', { class: 'adm-block adm-muted', text: when(m.appliedAt) })) : badge(['Waiting', 'warn'])))));
+    const form = $('#db-migrate-form');
+    form.hidden = !s.pending;
+    $('#db-apply').textContent = `Apply ${s.pending} update${s.pending === 1 ? '' : 's'}`;
+    $('#db-apply').disabled = !$('#db-backup-ok').checked || !s.check.ok;
+
+    const b = s.backup;
+    $('#db-backup').replaceChildren(
+      !b.configured ? noteBox('info', 'Not set up: set S3_ENDPOINT, S3_BUCKET, S3_REGION, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY (Backblaze B2 or Cloudflare R2, DEPLOY.md). Until then, back up with npm run db:export-data.')
+        : noteBox(b.stale ? 'danger' : 'success', b.lastSuccessAt ? `Last successful backup ${when(b.lastSuccessAt)} (${ago(b.lastSuccessAt)}), ${kb(b.lastSuccessBytes || 0)}.` : 'No backup has succeeded yet.'),
+      b.lastFailure ? noteBox('danger', `Last attempt failed ${when(b.lastFailureAt)}: ${b.lastFailure}`) : '');
+    $('#db-backup-now').disabled = !b.configured;
+    $('#db-backup-meta').textContent = b.configured ? `Runs daily after ${String(s.jobs.backupHourUtc).padStart(2, '0')}:00 UTC${b.lastSuccessKey ? ` · ${b.lastSuccessKey}` : ''}` : '';
+
+    const dl = $('#db-server');
+    dl.replaceChildren();
+    row(dl, 'Database', `${s.server.database} on ${s.server.host}`);
+    row(dl, 'Engine', s.server.version);
+    row(dl, 'Node', s.server.node);
+    row(dl, 'Mode', [s.server.production ? 'production' : 'development', s.server.demo ? 'demo' : ''].filter(Boolean).join(', '));
+    row(dl, 'Jobs', s.jobs.mode === 'cron' ? 'run by a scheduler (JOBS_MODE=cron)' : 'run by the app itself');
+    row(dl, 'File storage', `${s.storage.driver}${s.storage.problems.length ? ` (${s.storage.problems.join(' ')})` : ''}`);
+    $('#db-jobs').replaceChildren(...(s.jobs.recent.length ? s.jobs.recent.map((j) => el('li', {},
+      el('span', { class: 'adm-timeline-when', text: `${when(j.started_at)} · ${j.trigger_by || ''}` }),
+      el('strong', { text: j.job }), badge(j.status === 'ok' ? ['OK', 'good'] : j.status === 'failed' ? ['Failed', 'bad'] : [j.status, 'warn']),
+      el('span', { class: 'adm-muted', text: [j.detail, j.bytes ? kb(j.bytes) : ''].filter(Boolean).join(' · ') }))) : [el('li', { class: 'adm-muted', text: 'No jobs have run yet.' })]));
+  }
+  async function loadDatabase() { renderDatabase(await api('GET', '/api/admin/database')); }
+  $('#db-backup-ok').addEventListener('change', () => { $('#db-apply').disabled = !$('#db-backup-ok').checked; });
+  $('#db-migrate-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.currentTarget;
+    if (!$('#db-backup-ok').checked) return;
+    try {
+      const r = await busy(f, () => api('POST', '/api/admin/database/migrate', { backupConfirmed: true }));
+      $('#db-backup-ok').checked = false;
+      renderDatabase(r);
+      alertIn(f, '');
+      toast(r.applied.length ? `Applied ${r.applied.length} update${r.applied.length === 1 ? '' : 's'}. The site is back to normal.` : 'Nothing was waiting.');
+      if (!r.maintenance.on) refreshBadges();
+    } catch (err) { alertIn(f, err.message); toast(err.message, 'error'); }
+  });
+  $('#db-backup-now').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.textContent = 'Backing up…';
+    try {
+      const r = await api('POST', '/api/admin/database/backup');
+      renderDatabase(r);
+      toast(`Backup stored: ${r.result.detail}`);
+    } catch (err) { toast(err.message, 'error'); await loadDatabase().catch(() => {}); } finally { btn.textContent = label; btn.disabled = false; }
   });
 
   // ------------------------------------------------------------ admin users: roles

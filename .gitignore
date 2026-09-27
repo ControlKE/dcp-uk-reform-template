@@ -20,3 +20,6 @@ desktop.ini
 *.sql.gz
 dcp-uk-*/
 !server/schema.sql
+
+# Uploaded files when STORAGE_DRIVER=disk (personal data)
+server/storage/

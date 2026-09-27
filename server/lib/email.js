@@ -11,6 +11,7 @@
 const sanitizeHtml = require('sanitize-html');
 const db = require('./db');
 const mailer = require('./mailer');
+const storage = require('./storage');
 
 const EMAIL_RE = /^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]{2,}$/;
 const MAX_ATTACHMENT = 5 * 1024 * 1024;
@@ -165,10 +166,8 @@ async function receive({ source, fromName, fromEmail, subject, text, memberId = 
 
 // ---------------------------------------------------------------- the send queue
 
-const recentSends = [];
 let running = false;
 let timer = null;
-let lastCleanup = 0;
 
 const firstName = (full) => String(full || '').trim().split(/\s+/)[0] || 'friend';
 async function fieldsFor(memberId, fallbackName) {
@@ -196,8 +195,9 @@ async function deliver(emailId, recipientIds) {
   const email = await db.one('SELECT * FROM emails WHERE id = ?', [emailId]);
   const rcps = await db.query(`SELECT * FROM email_recipients WHERE id IN (${recipientIds.map(() => '?').join(',')}) AND status = 'sending'`, recipientIds);
   if (!email || !rcps.length) return;
-  const attachments = (await db.query('SELECT filename, content_type, data FROM email_attachments WHERE email_id = ?', [emailId]))
-    .map((a) => ({ filename: a.filename, contentType: a.content_type, content: a.data }));
+  // Attachments stored before the storage adapter keep their bytes in the row.
+  const attachments = await Promise.all((await db.query('SELECT filename, content_type, file_id, data FROM email_attachments WHERE email_id = ?', [emailId]))
+    .map(async (a) => ({ filename: a.filename, contentType: a.content_type, content: a.file_id ? (await storage.get(a.file_id)).buffer : a.data })));
   const to = rcps.filter((r) => r.kind === 'to');
   const lead = to[0] || rcps[0];
   const fields = await fieldsFor(lead.member_id, lead.name);
@@ -237,15 +237,18 @@ async function deliver(emailId, recipientIds) {
   await refreshStatus(emailId);
 }
 
+// Sends what the rate limits allow right now; returns how many deliveries it made.
+// Safe to run from several processes at once (the web app and a cron job): rows are
+// claimed atomically, and the per-minute rate is counted in the database.
 async function tick() {
-  if (running) return;
+  if (running) return 0;
   running = true;
+  let delivered = 0;
   try {
     // A crash mid-send leaves rows in 'sending'; put them back after 10 minutes.
     await db.query("UPDATE email_recipients SET status = 'queued' WHERE status = 'sending' AND next_attempt_at < UTC_TIMESTAMP() - INTERVAL 10 MINUTE");
-    const now = Date.now();
-    while (recentSends.length && now - recentSends[0] > 60000) recentSends.shift();
-    let budget = mailer.config().ratePerMinute - recentSends.length;
+    const lastMinute = Number((await db.one("SELECT COUNT(*) AS n FROM email_recipients WHERE status IN ('sent', 'logged') AND sent_at > UTC_TIMESTAMP() - INTERVAL 1 MINUTE")).n);
+    let budget = mailer.config().ratePerMinute - lastMinute;
     // Optional provider daily cap (e.g. Brevo's free plan: 300 a day). Anything over
     // it stays queued and goes out the next day; transactional mail still goes first.
     const daily = Number(process.env.MAIL_DAILY_LIMIT) || 0;
@@ -263,18 +266,15 @@ async function tick() {
       const claimed = await db.query(`UPDATE email_recipients SET status = 'sending', next_attempt_at = UTC_TIMESTAMP() WHERE status = 'queued' AND id IN (${unit.map(() => '?').join(',')})`, unit);
       if (!claimed.affectedRows) continue;
       await deliver(next.email_id, unit);
-      recentSends.push(Date.now());
-      budget--;
-    }
-    if (now - lastCleanup > 3600000) {
-      lastCleanup = now;
-      await db.query('DELETE FROM email_attachments WHERE email_id IS NULL AND created_at < UTC_TIMESTAMP() - INTERVAL 1 DAY');
+      delivered += unit.length;
+      budget -= unit.length;
     }
   } catch (err) {
     console.error('Mail queue:', err.message);
   } finally {
     running = false;
   }
+  return delivered;
 }
 
 function kick() { setTimeout(() => { tick(); }, 50); }

@@ -19,7 +19,11 @@ const { ROLES, permissions, need, can } = require('./lib/roles');
 const { sendCsv } = require('./lib/export');
 const financeRoutes = require('./routes/finance');
 const sitePages = require('./lib/site-pages');
+const storage = require('./lib/storage');
 const demo = require('./lib/demo');
+const maintenance = require('./lib/maintenance');
+const jobs = require('./lib/jobs');
+const backup = require('./lib/backup');
 
 // Feature flags: switched off until the feature is built and configured.
 const FEATURES = {
@@ -53,6 +57,9 @@ app.use((req, res, next) => {
   });
   next();
 });
+
+// Maintenance mode (lib/maintenance.js): "back shortly" everywhere except the admin sign-in and Database page.
+app.use(maintenance.middleware);
 
 const smallJson = express.json({ limit: '20kb' });
 const composeJson = express.json({ limit: '400kb' });
@@ -101,7 +108,8 @@ const orNull = (v) => (v === undefined || v === '' ? null : v);
 app.get('/api/health', async (req, res) => {
   try {
     await db.one('SELECT 1 AS ok');
-    res.json({ ok: true, database: 'up' });
+    // Stays 200 in maintenance mode so the host keeps this version running while an admin applies migrations.
+    res.json({ ok: true, database: 'up', ...(maintenance.on() ? { maintenance: true } : {}) });
   } catch (err) {
     res.status(503).json({ ok: false, database: 'down' });
   }
@@ -264,7 +272,7 @@ adminApi.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next();
 const withPerms = (a) => (a ? { ...a, roleLabel: ROLES[a.role]?.label || a.role, perms: permissions(a.role) } : null);
 
 adminApi.get('/session', async (req, res) => {
-  res.json({ admin: withPerms(await auth.getSessionAdmin(req)), demo: demo.DEMO });
+  res.json({ admin: withPerms(await auth.getSessionAdmin(req)), demo: demo.DEMO, maintenance: maintenance.info() });
 });
 
 adminApi.post('/login', async (req, res) => {
@@ -276,7 +284,7 @@ adminApi.post('/login', async (req, res) => {
   }
   auth.clearLoginFailures(req.ip);
   res.set('Set-Cookie', auth.sessionCookie(await auth.createSession(admin.id), req, auth.SESSION_TTL_MS));
-  res.json({ admin: withPerms({ id: admin.id, username: admin.username, role: admin.role || 'super_admin', created_at: admin.created_at }), demo: demo.DEMO });
+  res.json({ admin: withPerms({ id: admin.id, username: admin.username, role: admin.role || 'super_admin', created_at: admin.created_at }), demo: demo.DEMO, maintenance: maintenance.info() });
 });
 
 adminApi.post('/logout', async (req, res) => {
@@ -520,19 +528,27 @@ adminApi.post('/email-attachments', need('email'), express.raw({ type: () => tru
   const type = /^[\w.+-]+\/[\w.+-]+$/.test(req.get('content-type') || '') ? req.get('content-type') : 'application/octet-stream';
   if (!name) return res.status(400).json({ error: 'The file needs a name.' });
   if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'The file is empty.' });
-  const r = await db.query('INSERT INTO email_attachments (filename, content_type, size, data, uploaded_by) VALUES (?, ?, ?, ?, ?)', [name, type, req.body.length, req.body, req.admin.username]);
+  // The bytes go to the storage adapter (STORAGE_DRIVER); the row points at them.
+  const fileId = await storage.put({ buffer: req.body, filename: name, contentType: type, purpose: 'email_attachment', by: req.admin.username });
+  const r = await db.query('INSERT INTO email_attachments (filename, content_type, size, file_id, uploaded_by) VALUES (?, ?, ?, ?, ?)', [name, type, req.body.length, fileId, req.admin.username]);
   res.status(201).json({ id: r.insertId, filename: name, size: req.body.length, contentType: type });
 });
 adminApi.delete('/email-attachments/:id', need('email'), async (req, res) => {
-  await db.query('DELETE FROM email_attachments WHERE id = ? AND (email_id IS NULL OR email_id IN (SELECT id FROM emails WHERE folder = \'draft\'))', [Number(req.params.id) || 0]);
+  const a = await db.one("SELECT id, file_id FROM email_attachments WHERE id = ? AND (email_id IS NULL OR email_id IN (SELECT id FROM emails WHERE folder = 'draft'))", [Number(req.params.id) || 0]);
+  if (a) {
+    await db.query('DELETE FROM email_attachments WHERE id = ?', [a.id]);
+    if (a.file_id) await storage.remove(a.file_id).catch((err) => console.error('Could not remove a stored file:', err.message));
+  }
   res.json({ ok: true });
 });
 adminApi.get('/email-attachments/:id', need('email'), async (req, res) => {
-  const a = await db.one('SELECT filename, content_type, data FROM email_attachments WHERE id = ?', [Number(req.params.id) || 0]);
+  const a = await db.one('SELECT filename, content_type, file_id, data FROM email_attachments WHERE id = ?', [Number(req.params.id) || 0]);
   if (!a) return res.status(404).json({ error: 'Attachment not found.' });
+  const bytes = a.file_id ? (await storage.get(a.file_id))?.buffer : a.data;
+  if (!bytes) return res.status(404).json({ error: 'The attachment file is missing.' });
   // Always a download, never rendered in the admin's origin.
   res.set({ 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(a.filename)}`, 'Cache-Control': 'no-store' });
-  res.send(a.data);
+  res.send(bytes);
 });
 
 // ---------------------------------------------------------------- admin: dashboard, search, notifications
@@ -559,6 +575,8 @@ adminApi.get('/dashboard', need('dashboard'), async (req, res) => {
       FROM members ORDER BY created_at DESC, id DESC LIMIT 6`),
     money: await dashboardMoney(),
     verifierWarning: await verifierWarning(),
+    // Off-site backups: Super admins only. Not shown on the demo site unless set up.
+    backup: can(req.admin, 'system') && (!demo.DEMO || backup.configured()) ? { ...(await backup.status()), production: IN_PRODUCTION } : null,
   });
 });
 
@@ -910,7 +928,82 @@ adminApi.patch('/donations/:id', need('donations.write'), async (req, res) => {
 });
 
 adminApi.use(financeRoutes);
+// ---------------------------------------------------------------- admin: database (Super admin)
+
+// Migrations, maintenance, backups and jobs, for Settings → Database.
+async function databaseState() {
+  const [list, backupStatus, recent, version] = await Promise.all([
+    migrations.status(), backup.status(),
+    db.query("SELECT job, status, started_at, finished_at, detail, bytes, trigger_by FROM job_runs WHERE job <> 'mail' ORDER BY id DESC LIMIT 10")
+      .catch((err) => { if (jobs.noTable(err)) return []; throw err; }),
+    db.one('SELECT VERSION() AS v'),
+  ]);
+  let check = { ok: true, message: null };
+  try { await migrations.plan(); } catch (err) { check = { ok: false, message: err.message }; }
+  return {
+    maintenance: maintenance.info(), migrations: list, pending: list.filter((m) => !m.appliedAt).length, check,
+    backup: backupStatus, jobs: { mode: jobs.MODE, backupHourUtc: jobs.BACKUP_HOUR, recent },
+    storage: { driver: storage.driver(), problems: storage.problems() },
+    server: { database: db.config.database, host: db.config.host, version: version.v, node: process.version, production: IN_PRODUCTION, demo: demo.DEMO },
+  };
+}
+adminApi.get('/database', need('system'), async (req, res) => res.json(await databaseState()));
+
+// Applies pending migrations after the admin confirms a backup exists.
+adminApi.post('/database/migrate', need('system'), async (req, res) => {
+  if (req.body?.backupConfirmed !== true) return res.status(400).json({ error: 'Confirm that you have taken a backup of the live database first.' });
+  const conn = await db.raw().getConnection();
+  try {
+    const [[got]] = await conn.query("SELECT GET_LOCK('dcp_uk_migrate', 0) AS ok");
+    if (!got?.ok) return res.status(409).json({ error: 'Another admin is applying migrations right now.' });
+    let pending;
+    try { ({ pending } = await migrations.plan()); } catch (err) { return res.status(409).json({ error: err.message }); }
+    if (!pending.length) return res.json({ applied: [], ...(await databaseState()) });
+    const log = [];
+    try {
+      await migrations.apply(pending, (line) => log.push(line));
+    } catch (err) {
+      await audit.record(null, { ...audit.fromReq(req), action: 'database.migrate_failed', entity: 'database', entityId: db.config.database,
+        summary: `Migration failed: ${err.message}`.slice(0, 300), after: { pending: pending.map((m) => m.id), log }, flags: ['migration_failed'] });
+      return res.status(500).json({ error: `A migration failed: ${err.message}. The database may be partly updated; restore the backup or ask for help before trying again.` });
+    }
+    await audit.record(null, { ...audit.fromReq(req), action: 'database.migrated', entity: 'database', entityId: db.config.database,
+      summary: `Applied ${pending.length} migration(s): ${pending.map((m) => m.id).join(', ')}`.slice(0, 300), after: { applied: pending.map((m) => m.id), backupConfirmed: true } });
+    // A backup taken while the job log didn't exist yet is recorded now.
+    await jobs.flushUnlogged().catch((err) => console.error('Could not record earlier job runs:', err.message));
+    if (maintenance.info().reason === 'migrations') { maintenance.clear(); startServices(); }
+    res.json({ applied: pending.map((m) => m.id), ...(await databaseState()) });
+  } finally {
+    await conn.query("SELECT RELEASE_LOCK('dcp_uk_migrate')").catch(() => {});
+    conn.release();
+  }
+});
+
+// Runs the off-site backup now (e.g. just before applying migrations).
+adminApi.post('/database/backup', need('system'), async (req, res) => {
+  if (!backup.configured()) return res.status(400).json({ error: 'Off-site backups are not set up (S3_* variables). Use npm run db:export-data instead.' });
+  // Backups also run in maintenance mode: that is exactly when one is needed.
+  const result = await jobs.runDue({ trigger: 'admin', only: ['backup'], force: ['backup'], ignoreMaintenance: true });
+  const r = result.find((x) => x.job === 'backup');
+  await audit.record(null, { ...audit.fromReq(req), action: 'database.backup', entity: 'database', entityId: db.config.database,
+    summary: r?.status === 'ok' ? `Off-site backup taken: ${r.detail}` : `Off-site backup failed: ${r?.detail || 'did not run'}`.slice(0, 300) });
+  if (r?.status !== 'ok') return res.status(502).json({ error: `The backup failed: ${r?.detail || 'another job run was in progress; try again in a minute'}` });
+  res.json({ result: r, ...(await databaseState()) });
+});
+
 app.use('/api/admin', adminApi);
+
+// Scheduler entry point for hosts without an always-on process (JOBS_MODE=cron):
+//   GET /internal/cron?token=<CRON_TOKEN>   or   Authorization: Bearer <CRON_TOKEN>
+// Missing or short CRON_TOKEN: the route doesn't exist.
+const CRON_TOKEN = process.env.CRON_TOKEN || '';
+app.all('/internal/cron', async (req, res, next) => {
+  if (CRON_TOKEN.length < 24) return next();
+  const given = String(req.query.token || (req.get('authorization') || '').replace(/^Bearer\s+/i, ''));
+  const ok = crypto.timingSafeEqual(crypto.createHash('sha256').update(given).digest(), crypto.createHash('sha256').update(CRON_TOKEN).digest());
+  if (!ok) return res.status(403).json({ error: 'Forbidden.' });
+  res.set('Cache-Control', 'no-store').json({ ran: await jobs.runDue({ trigger: 'cron' }) });
+});
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));
 
 // ---------------------------------------------------------------- receipts (payer's signed link)
@@ -1006,14 +1099,22 @@ app.use((err, req, res, next) => {
   try {
     await migrations.prepare();
   } catch (err) {
-    console.error(err instanceof migrations.MigrationStop ? `
+    if (err instanceof migrations.PendingMigrations) {
+      // Start anyway, in maintenance mode, so a Super admin can back up and apply them from the admin.
+      maintenance.set('migrations', err.message);
+    } else {
+      console.error(err instanceof migrations.MigrationStop ? `
 NOT STARTING: ${err.message}
 ` : err);
-    process.exit(1);
+      process.exit(1);
+    }
   }
-  const seeded = await auth.ensureConfiguredAdmin();
-  email.startQueue();
+  if (process.env.MAINTENANCE_MODE === 'true') maintenance.set('manual', 'MAINTENANCE_MODE=true');
+  const seeded = await auth.ensureConfiguredAdmin().catch((err) => { console.error('Could not create the configured admin:', err.message); return null; });
+  if (!maintenance.on()) startServices();
   const mailProblems = mailer.problems();
+  const opsProblems = [...storage.problems(),
+    ...(IN_PRODUCTION && !demo.DEMO && !backup.configured() ? ['Off-site backups are not set up (S3_* variables): the dashboard shows this in red.'] : [])];
   const dataWarning = await demo.checkData(db, IN_PRODUCTION).catch(() => null);
   const weakAdmins = await auth.adminsWithExamplePassword();
   app.listen(PORT, HOST, () => {
@@ -1032,9 +1133,21 @@ NOT STARTING: ${err.message}
     console.log(`Email:         ${mc.transport}${mc.transport === 'log' ? ' (stored only, nothing is delivered)' : ''}${mc.demo ? ', forced by DEMO_MODE' : ''}, from ${mc.from.email}`);
     if (demo.DEMO) console.log('Mode:          DEMO (sample data only; email is never sent; real imports are refused)');
     if (dataWarning) console.warn(`WARNING: ${dataWarning}`);
+    console.log(`Jobs:          ${jobs.MODE === 'cron' ? 'cron (run npm run jobs:run or /internal/cron every minute)' : 'in-process loop'}; storage: ${storage.driver()}; off-site backups: ${backup.configured() ? `on, daily after ${String(jobs.BACKUP_HOUR).padStart(2, '0')}:00 UTC` : 'off'}`);
+    for (const p of opsProblems) console.warn(`WARNING: ${p}`);
+    if (maintenance.on()) {
+      const bar = '#'.repeat(78);
+      console.warn(`\n${bar}\n MAINTENANCE MODE: the public site says "back shortly".\n ${maintenance.info().message.replace(/\n/g, '\n ')}\n${bar}\n`);
+    }
     if (mailProblems.length) {
       const bar = '!'.repeat(78);
       console.warn(`\n${bar}\n EMAIL IS NOT PROPERLY CONFIGURED\n${mailProblems.map((p) => ` - ${p}`).join('\n')}\n${bar}\n`);
     }
   });
 })();
+
+// Mail queue and background jobs (lib/jobs.js). Not started in maintenance mode:
+// they start once the pending migrations are applied.
+function startServices() {
+  jobs.startLoop();
+}

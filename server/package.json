@@ -16,11 +16,13 @@
     "migrate": "node scripts/migrate.js",
     "db:export-schema": "node scripts/db-export-schema.js",
     "db:export-data": "node scripts/db-export-data.js",
-    "db:restore": "node scripts/db-restore.js"
+    "db:restore": "node scripts/db-restore.js",
+    "jobs:run": "node scripts/jobs-run.js"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",
     "apexcharts": "4.7.0",
+    "aws4fetch": "^1.0.20",
     "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "mysql2": "^3.24.4",

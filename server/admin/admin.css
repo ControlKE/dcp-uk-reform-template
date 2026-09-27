@@ -979,3 +979,19 @@ button.adm-earn-tab.selected { border-color: var(--adm-link); background: var(--
 /* DEMO_MODE badge next to the breadcrumb. */
 .adm-demo { margin-left: 8px; padding: 0 8px; border: 1px solid var(--adm-warning-fg); border-radius: 999px; color: var(--adm-warning-fg); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
 .adm-demo[hidden] { display: none; }
+
+/* ---------------------------------------------------------------- database page, backups, maintenance */
+.adm-alert-success { background: var(--adm-primary-soft); color: var(--adm-link); }
+.adm .adm-block { display: block; }
+.adm-db-side { display: flex; flex-direction: column; gap: 24px; min-width: 0; }
+.adm-db-scroll { max-height: 440px; overflow: auto; }
+.adm-db-table th:last-child, .adm-db-table td:last-child { text-align: right; }
+.adm-db-table td { vertical-align: top; text-align: left; }
+.adm-db-table td:last-child { font-weight: 400; white-space: nowrap; padding-left: 12px; }
+.adm-db-table td .adm-block { margin-top: 2px; font-size: 13px; }
+.adm-db-table .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+.adm-db-apply { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--adm-border); }
+.adm-db-confirm { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; cursor: pointer; }
+.adm-db-confirm input { width: 16px; height: 16px; margin-top: 2px; accent-color: var(--adm-primary); flex: none; }
+.adm-db-apply .adm-btn { align-self: flex-start; }
+#backup-status a, #maint-banner a { font-weight: 600; }

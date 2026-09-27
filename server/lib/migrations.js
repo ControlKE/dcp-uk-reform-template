@@ -7,8 +7,10 @@
 // without touching the database.
 //
 // Locally, pending migrations apply at startup. In production they apply only
+// from the admin (Settings → Database, Super admin, after confirming a backup),
 // through `npm run migrate -- --yes`, or at startup when AUTO_MIGRATE=true, so
-// there is always a chance to back up first (see DEPLOY.md).
+// there is always a chance to back up first (see DEPLOY.md). Until then the app
+// runs in maintenance mode.
 const fs = require('node:fs');
 const path = require('node:path');
 const db = require('./db');
@@ -26,6 +28,10 @@ const LEGACY = {
 };
 
 class MigrationStop extends Error {}
+// Production with migrations waiting: the app starts in maintenance mode instead.
+class PendingMigrations extends MigrationStop {
+  constructor(message, pending) { super(message); this.pending = pending; }
+}
 
 function load() {
   return fs.readdirSync(DIR).filter((f) => /^\d{3}_[a-z0-9_]+\.js$/.test(f)).sort()
@@ -98,11 +104,21 @@ async function prepare({ log = console.log } = {}) {
   const { pending } = await plan();
   if (!pending.length) return;
   const where = `"${db.config.database}" on ${db.config.host}`;
-  if (IN_PRODUCTION && process.env.AUTO_MIGRATE !== 'true') {
-    throw new MigrationStop(`Database ${where} needs ${pending.length} migration(s):\n${describe(pending)}\nBack up the database, then run "npm run migrate -- --yes" (or set AUTO_MIGRATE=true and redeploy). See DEPLOY.md.`);
+  // An empty database has nothing to back up: a fresh install creates its tables.
+  const fresh = (await tables()).size === 0;
+  if (IN_PRODUCTION && process.env.AUTO_MIGRATE !== 'true' && !fresh) {
+    throw new PendingMigrations(`Database ${where} needs ${pending.length} migration(s):\n${describe(pending)}\nBack up the database, then apply them in the admin (Settings → Database) or with "npm run migrate -- --yes". See DEPLOY.md.`, pending);
   }
   log(`Database ${where}: applying ${pending.length} migration(s):\n${describe(pending)}`);
   await apply(pending, log);
 }
 
-module.exports = { plan, apply, prepare, describe, MigrationStop, hasColumn, hasTable };
+// Every migration in this code, with when it was applied (null if pending).
+async function status() {
+  const migrations = load();
+  const rows = (await tables()).has('schema_migrations') ? await db.query('SELECT id, applied_at FROM schema_migrations') : [];
+  const at = Object.fromEntries(rows.map((r) => [r.id, r.applied_at]));
+  return migrations.map((m) => ({ id: m.id, description: m.description, appliedAt: at[m.id] || null }));
+}
+
+module.exports = { plan, apply, prepare, describe, status, MigrationStop, PendingMigrations, hasColumn, hasTable };

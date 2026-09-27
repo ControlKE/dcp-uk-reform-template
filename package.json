@@ -12,7 +12,8 @@
     "migrate": "npm --prefix server run migrate --",
     "db:export-schema": "npm --prefix server run db:export-schema --",
     "db:export-data": "npm --prefix server run db:export-data --",
-    "db:restore": "npm --prefix server run db:restore --"
+    "db:restore": "npm --prefix server run db:restore --",
+    "jobs:run": "npm --prefix server run jobs:run --"
   },
   "engines": {
     "node": ">=22.13"

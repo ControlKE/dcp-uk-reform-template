@@ -103,11 +103,13 @@ CREATE TABLE IF NOT EXISTS `email_attachments` (
   `filename` varchar(200) NOT NULL,
   `content_type` varchar(100) NOT NULL,
   `size` int(11) NOT NULL,
-  `data` mediumblob NOT NULL,
+  `file_id` int(11) DEFAULT NULL,
+  `data` mediumblob DEFAULT NULL,
   `uploaded_by` varchar(190) DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   PRIMARY KEY (`id`),
   KEY `idx_attachments_email` (`email_id`),
+  KEY `idx_attachments_file` (`file_id`),
   CONSTRAINT `fk_attachments_email` FOREIGN KEY (`email_id`) REFERENCES `emails` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -154,7 +156,40 @@ CREATE TABLE IF NOT EXISTS `email_recipients` (
   PRIMARY KEY (`id`),
   KEY `idx_recipients_queue` (`status`,`next_attempt_at`),
   KEY `idx_recipients_email` (`email_id`),
+  KEY `idx_recipients_sent` (`status`,`sent_at`),
   CONSTRAINT `fk_recipients_email` FOREIGN KEY (`email_id`) REFERENCES `emails` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Table files
+CREATE TABLE IF NOT EXISTS `files` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `driver` varchar(10) NOT NULL,
+  `object_key` varchar(255) NOT NULL,
+  `purpose` varchar(30) NOT NULL,
+  `filename` varchar(200) NOT NULL,
+  `content_type` varchar(100) NOT NULL,
+  `size` int(11) NOT NULL,
+  `sha256` char(64) NOT NULL,
+  `data` mediumblob DEFAULT NULL,
+  `created_by` varchar(190) DEFAULT NULL,
+  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_files_key` (`driver`,`object_key`),
+  KEY `idx_files_purpose` (`purpose`,`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Table job_runs
+CREATE TABLE IF NOT EXISTS `job_runs` (
+  `id` bigint(20) NOT NULL AUTO_INCREMENT,
+  `job` varchar(30) NOT NULL,
+  `status` varchar(10) NOT NULL,
+  `started_at` datetime(3) NOT NULL,
+  `finished_at` datetime(3) DEFAULT NULL,
+  `detail` varchar(500) DEFAULT NULL,
+  `bytes` bigint(20) DEFAULT NULL,
+  `trigger_by` varchar(20) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_job_runs` (`job`,`status`,`started_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Table members
@@ -259,7 +294,8 @@ INSERT IGNORE INTO `schema_migrations` (`id`, `applied_at`) VALUES
 ('003_marketing_consent', UTC_TIMESTAMP()),
 ('004_finance', UTC_TIMESTAMP()),
 ('005_tier_display_kes', UTC_TIMESTAMP()),
-('006_tier_choice', UTC_TIMESTAMP());
+('006_tier_choice', UTC_TIMESTAMP()),
+('007_storage_jobs', UTC_TIMESTAMP());
 
 -- Table sessions
 CREATE TABLE IF NOT EXISTS `sessions` (

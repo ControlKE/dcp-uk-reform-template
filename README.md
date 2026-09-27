@@ -54,6 +54,19 @@ Schema changes are numbered files in `server/migrations`. Locally they apply aut
 - **`npm run db:export-data`**: a full backup (structure and data) as `.sql.gz`, written in Node, so it works on Railway too and needs no `mysqldump`. phpMyAdmin imports it directly. `-- --per-table --out <dir>` writes one file per table for hosts with a small import limit. The file holds personal data: keep it private.
 - **`npm run db:restore -- --file <backup>`**: restores a backup. `--database <name> --drop-after` restores into a scratch database, prints the row counts and drops it: that is the monthly restore test (DEPLOY.md). Replacing the app's own database needs `--replace`, and in production also `--confirm <database name>`.
 
+## Operations: updates, backups, jobs, files
+
+- **Database updates in production** wait for a Super admin:
+  - The app starts in **maintenance mode**: the public site says "Back shortly", while the admin sign-in and **Settings → Database** keep working.
+  - The Database page lists the waiting updates, takes an off-site backup (**Back up now**), and applies the updates once "I have taken a backup" is ticked. Every step is audit-logged.
+  - A brand-new, empty database is set up automatically.
+- **Off-site backups** run nightly to S3-compatible storage (Backblaze B2 or Cloudflare R2), keeping 14 daily and 6 monthly copies.
+  - Super admins see "Last successful backup" on the dashboard; it turns red after 48 hours.
+  - Setup, and the monthly restore test, are in DEPLOY.md.
+- **Background jobs** (mail queue, clean-up, backups) run inside the app (`JOBS_MODE=loop`), or from a scheduler with `npm run jobs:run` or `GET /internal/cron?token=…` (`JOBS_MODE=cron`). A database lock stops two runs overlapping.
+- **Uploaded files** go through a storage adapter (`STORAGE_DRIVER=db|disk|s3`). Each file keeps a checksum, and is served only through the app's own routes.
+- **phpMyAdmin on Railway**: `deploy/railway/phpmyadmin`, off by default, with basic auth in front of the database login.
+
 ## Demo mode
 
 `DEMO_MODE=true` marks a demonstration copy (the Railway "demo" environment):
