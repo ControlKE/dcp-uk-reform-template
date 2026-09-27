@@ -1,6 +1,6 @@
 // Donate: records the pledge, then shows the chapter's bank details and a reference.
 (function () {
-  const { request, showAlert, clearErrors, showErrors, addRow, formatGbp, showFee } = window.DCPForms;
+  const { request, showAlert, clearErrors, showErrors, addRow, formatGbp } = window.DCPForms;
   const form = document.getElementById('donate-form');
   if (!form) return;
 
@@ -32,8 +32,7 @@
     showAlert(form, message);
   }
 
-  request('GET', '/api/payment-details').then(({ donationAccount, feeAccount }) => {
-    showFee(feeAccount);
+  request('GET', '/api/payment-details').then(({ donationAccount }) => {
     if (!donationAccount.configured) closeDonations('Donations are not open yet: the chapter is still setting up its bank account. Please check back soon.');
   }).catch((err) => closeDonations(err.message));
 

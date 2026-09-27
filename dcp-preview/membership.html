@@ -40,7 +40,7 @@
   <div class="container">
     <p class="breadcrumb"><a href="index.html">Home</a> / Membership</p>
     <h1>Become a DCP Member</h1>
-    <p>Five short steps. One-time registration fee of <span data-fee-amount>&pound;20</span>.</p>
+    <p>Five short steps. <span data-tiers="summary">Ordinary membership: &pound;20 a year, renewed annually. Stakeholder membership: &pound;500 a year. Visit contribution: &pound;200, one-off.</span></p>
   </div>
 </section>
 <section class="section section-light">
@@ -128,8 +128,8 @@
           </fieldset>
 
           <div class="form-step" data-step="4" hidden>
-            <h3 style="margin-top:0;">Pay the registration fee</h3>
-            <p style="font-size:14px;color:var(--text-on-light-muted);margin-top:0;">Your application has been received. Please pay the one-time fee using the details below, and quote your reference so we can match the payment to you.</p>
+            <h3 style="margin-top:0;">Pay your membership fee</h3>
+            <p style="font-size:14px;color:var(--text-on-light-muted);margin-top:0;">Your application has been received. Please pay the membership fee using the details below, and quote your reference so we can match the payment to you.</p>
             <dl class="pay-details" id="fee-details"></dl>
             <p id="fee-instructions" style="font-size:14px;color:var(--text-on-light-muted);" hidden></p>
             <div class="field" style="max-width:360px;">
@@ -154,10 +154,11 @@
       </div>
       <div>
         <div class="callout-accent" style="margin-bottom:20px;">
-          <p class="section-eyebrow" style="justify-content:flex-start;color:var(--accent-2);">REGISTRATION FEE</p>
-          <p style="font-family:var(--font-display);font-weight:900;font-size:32px;margin:6px 0;color:var(--text-on-light);"><span data-fee-amount>&pound;20</span></p>
-          <p style="margin:0 0 10px;font-size:13px;color:var(--text-on-light);">One-time membership fee</p>
-          <p style="margin:0;font-size:13px;color:var(--text-on-light-muted);">Paid once when you register. You will see the payment details and your own reference at the end of the form, so quote that reference when you pay.</p>
+          <p class="section-eyebrow" style="justify-content:flex-start;color:var(--accent-2);">MEMBERSHIP FEES</p>
+          <p style="font-family:var(--font-display);font-weight:900;font-size:32px;margin:6px 0;color:var(--text-on-light);"><span data-tiers="fee">&pound;20 a year</span></p>
+          <p style="margin:0 0 10px;font-size:13px;color:var(--text-on-light);"><span data-tiers="fee-name">Ordinary membership</span>, which is what this form registers you for.</p>
+          <ul class="tier-list" data-tiers="list"><li><strong>Ordinary membership</strong>: &pound;20 a year</li><li><strong>Stakeholder membership</strong>: &pound;500 a year</li><li><strong>Visit contribution</strong>: &pound;200, one-off</li></ul>
+          <p style="margin:0;font-size:13px;color:var(--text-on-light-muted);">To become a Stakeholder member or make a visit contribution, <a href="contact.html" style="color:var(--accent);font-weight:600;">contact the chapter</a>. You will see the payment details and your own reference at the end of the form, so quote that reference when you pay.</p>
         </div>
         <div class="prose">
           <h3 style="margin-top:0;">Eligibility</h3>
@@ -167,7 +168,7 @@
             <li>Be resident in the United Kingdom.</li>
             <li>Accept the DCP constitution and values.</li>
             <li>Provide complete, accurate information.</li>
-            <li>Pay the <span data-fee-amount>&pound;20</span> registration fee.</li>
+            <li>Pay the membership fee for your tier.</li>
           </ul>
           <h3>What membership gives you</h3>
           <ul>

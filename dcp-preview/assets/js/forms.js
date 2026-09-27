@@ -74,11 +74,5 @@ window.DCPForms = (function () {
 
   const formatGbp = (amount) => formatMoney(amount, 'GBP');
 
-  // Keeps the fee shown in the page copy in step with the admin settings.
-  function showFee(feeAccount) {
-    const text = formatMoney(feeAccount.feeAmount, feeAccount.feeCurrency);
-    document.querySelectorAll('[data-fee-amount]').forEach((el) => { el.textContent = text; });
-  }
-
-  return { request, showAlert, clearErrors, showErrors, addRow, formatMoney, formatGbp, showFee };
+  return { request, showAlert, clearErrors, showErrors, addRow, formatMoney, formatGbp };
 })();

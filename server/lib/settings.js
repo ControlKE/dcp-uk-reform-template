@@ -1,17 +1,14 @@
 // The two payment destinations the admin sets up:
-//   feeAccount      - where the membership registration fee goes (bank or M-Pesa),
-//                     with the amount and its currency
+//   feeAccount      - where membership fees are paid (bank or M-Pesa). The amount
+//                     is not stored here: it is the member's tier (membership_tiers)
 //   donationAccount - the UK bank account that receives GBP donations
 const db = require('./db');
 
 const FEE_METHODS = ['bank', 'mpesa_paybill', 'mpesa_till'];
-const FEE_CURRENCIES = ['GBP', 'KES', 'USD', 'EUR'];
 
 const DEFAULTS = {
   feeAccount: {
     method: 'bank',
-    feeAmount: 20,
-    feeCurrency: 'GBP',
     accountName: '', bankName: '', accountNumber: '', sortCode: '', iban: '', swift: '',
     paybillNumber: '', tillNumber: '',
     instructions: '',
@@ -56,18 +53,9 @@ function normaliseSwift(v) {
 function validateFeeAccount(input) {
   const method = FEE_METHODS.includes(input.method) ? input.method : null;
   if (!method) throw new ValidationError('Choose how the membership fee is paid.');
-  const feeCurrency = FEE_CURRENCIES.includes(String(input.feeCurrency || '').toUpperCase())
-    ? String(input.feeCurrency).toUpperCase() : null;
-  if (!feeCurrency) throw new ValidationError(`Choose a fee currency (${FEE_CURRENCIES.join(', ')}).`);
-  const feeAmount = Math.round(Number(input.feeAmount) * 100) / 100;
-  if (!Number.isFinite(feeAmount) || feeAmount < 1 || feeAmount > 1000000) {
-    throw new ValidationError('Fee amount must be between 1 and 1,000,000.');
-  }
   const out = {
     ...DEFAULTS.feeAccount,
     method,
-    feeAmount,
-    feeCurrency,
     accountName: str(input.accountName, 120),
     instructions: str(input.instructions, 1000),
   };
@@ -108,9 +96,13 @@ function validateDonationAccount(input) {
   return out;
 }
 
+// Saved before tiers existed; the tier amount replaced them.
+const RETIRED = { feeAccount: ['feeAmount', 'feeCurrency'] };
+
 async function getSetting(key) {
   const row = await db.one('SELECT value, updated_at, updated_by FROM settings WHERE `key` = ?', [key]);
   const value = row ? { ...DEFAULTS[key], ...JSON.parse(row.value) } : { ...DEFAULTS[key] };
+  for (const k of RETIRED[key] || []) delete value[k];
   return { value, configured: Boolean(row), updatedAt: row?.updated_at ?? null, updatedBy: row?.updated_by ?? null };
 }
 
@@ -121,12 +113,20 @@ async function saveSetting(key, value, adminUsername) {
   `, [key, JSON.stringify(value), adminUsername]);
 }
 
+// The fee a new registration pays: the Ordinary tier, in GBP, with its optional
+// approximate KES figure (display only).
+async function registrationFee() {
+  const t = await db.one("SELECT name, amount, display_kes, renewal FROM membership_tiers WHERE tkey = 'ordinary'");
+  if (!t) return { feeAmount: 20, feeCurrency: 'GBP', feeKes: null, feeRenewal: 'yearly', feeTier: 'Ordinary membership' };
+  return { feeAmount: Number(t.amount), feeCurrency: 'GBP', feeKes: t.display_kes === null ? null : Number(t.display_kes), feeRenewal: t.renewal, feeTier: t.name };
+}
+
 // What the public pages are allowed to see: only the fields that apply to the
-// chosen method, and nothing at all until an admin has saved the account.
+// chosen method, and no account details at all until an admin has saved the account.
 async function publicFeeAccount() {
-  const { value: a, configured } = await getSetting('feeAccount');
-  if (!configured) return { configured: false, feeAmount: a.feeAmount, feeCurrency: a.feeCurrency };
-  const base = { configured: true, method: a.method, feeAmount: a.feeAmount, feeCurrency: a.feeCurrency, accountName: a.accountName, instructions: a.instructions };
+  const [{ value: a, configured }, fee] = await Promise.all([getSetting('feeAccount'), registrationFee()]);
+  if (!configured) return { configured: false, ...fee };
+  const base = { configured: true, method: a.method, ...fee, accountName: a.accountName, instructions: a.instructions };
   if (a.method === 'bank') return { ...base, bankName: a.bankName, accountNumber: a.accountNumber, sortCode: a.sortCode, iban: a.iban, swift: a.swift };
   if (a.method === 'mpesa_paybill') return { ...base, paybillNumber: a.paybillNumber };
   return { ...base, tillNumber: a.tillNumber };
@@ -140,7 +140,7 @@ async function publicDonationAccount() {
 }
 
 module.exports = {
-  ValidationError, FEE_METHODS, FEE_CURRENCIES,
+  ValidationError, FEE_METHODS,
   getSetting, saveSetting, validateFeeAccount, validateDonationAccount,
   publicFeeAccount, publicDonationAccount,
 };

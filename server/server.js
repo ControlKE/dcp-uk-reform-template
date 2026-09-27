@@ -18,6 +18,7 @@ const finance = require('./lib/finance');
 const { ROLES, permissions, need, can } = require('./lib/roles');
 const { sendCsv } = require('./lib/export');
 const financeRoutes = require('./routes/finance');
+const sitePages = require('./lib/site-pages');
 
 // Feature flags: switched off until the feature is built and configured.
 const FEATURES = {
@@ -106,7 +107,8 @@ app.get('/api/health', async (req, res) => {
 });
 
 app.get('/api/payment-details', async (req, res) => {
-  res.json({ feeAccount: await settings.publicFeeAccount(), donationAccount: await settings.publicDonationAccount() });
+  const [feeAccount, donationAccount, tiers] = await Promise.all([settings.publicFeeAccount(), settings.publicDonationAccount(), finance.publicTiers()]);
+  res.json({ feeAccount, donationAccount, tiers, tierSummary: finance.tierSentence(tiers) });
 });
 
 app.post('/api/members', submissionLimit, async (req, res) => {
@@ -545,8 +547,19 @@ adminApi.get('/dashboard', need('dashboard'), async (req, res) => {
     recentRegistrations: await db.query(`SELECT id, reference, full_name, email, chapter, status, payment_status, created_at
       FROM members ORDER BY created_at DESC, id DESC LIMIT 6`),
     money: await dashboardMoney(),
+    verifierWarning: await verifierWarning(),
   });
 });
+
+// The four-eyes check needs a second admin who can verify payments. With only one,
+// pending payments can never be verified, so the dashboard says so.
+async function verifierWarning() {
+  const { requireSecondVerifier } = await finance.getFinanceSettings();
+  if (!requireSecondVerifier) return null;
+  const roles = Object.keys(ROLES).filter((r) => can({ role: r }, 'finance.write'));
+  const verifiers = Number((await db.one(`SELECT COUNT(*) AS n FROM admins WHERE role IN (${roles.map(() => '?').join(', ')})`, roles)).n);
+  return verifiers < 2 ? { verifiers } : null;
+}
 
 // Income for the dashboard: verified and reconciled money in, in GBP as recorded.
 async function dashboardMoney() {
@@ -934,8 +947,12 @@ app.use('/shared', express.static(SHARED_DIR));
 // Browsers ask for /favicon.ico on every page; answer with the DCP logo.
 app.get('/favicon.ico', (req, res) => res.type('image/png').sendFile(path.join(SITE_DIR, 'assets', 'img', 'dcp-logo.png')));
 
+// Pages that show the membership tiers get their wording from the tier table.
+app.get(['/membership.html', '/join'], sitePages.tierPage(SITE_DIR, 'membership.html'));
+app.get(['/donate.html', '/donate'], sitePages.tierPage(SITE_DIR, 'donate.html'));
+
 // Friendly URLs for the header buttons; the .html files still work too.
-const PAGE_ROUTES = { '/donate': 'donate.html', '/join': 'membership.html', '/member-portal': 'member-portal.html' };
+const PAGE_ROUTES = { '/member-portal': 'member-portal.html' };
 for (const [route, file] of Object.entries(PAGE_ROUTES)) {
   app.get(route, (req, res) => res.sendFile(path.join(SITE_DIR, file)));
 }

@@ -53,20 +53,43 @@ async function saveFinanceSettings(input, who) {
   });
 }
 
-const listTiers = (q = db) => q.query('SELECT id, tkey, name, amount, currency, renewal, tx_type, active, sort, updated_at, updated_by FROM membership_tiers ORDER BY sort, id');
+const listTiers = (q = db) => q.query('SELECT id, tkey, name, amount, currency, display_kes, renewal, tx_type, active, sort, updated_at, updated_by FROM membership_tiers ORDER BY sort, id');
+
+// What the public pages show: active tiers, in order. displayKes is approximate
+// and for display only; dues are always the GBP amount.
+async function publicTiers(q = db) {
+  const rows = await q.query('SELECT tkey, name, amount, display_kes, renewal FROM membership_tiers WHERE active = 1 ORDER BY sort, id');
+  return rows.map((t) => ({ key: t.tkey, name: t.name, amount: Number(t.amount), renewal: t.renewal, displayKes: t.display_kes === null ? null : Number(t.display_kes) }));
+}
+
+const gbpText = (n) => `£${Number(n).toLocaleString('en-GB', { minimumFractionDigits: Number.isInteger(Number(n)) ? 0 : 2, maximumFractionDigits: 2 })}`;
+// "Ordinary membership: £20 a year, renewed annually. Stakeholder membership: £500 a year.
+// Visit contribution: £200, one-off." Only the first yearly tier says "renewed annually".
+function tierSentence(tiers) {
+  let saidRenewal = false;
+  return tiers.map((t) => {
+    if (t.renewal !== 'yearly') return `${t.name}: ${gbpText(t.amount)}, one-off.`;
+    const tail = saidRenewal ? '' : ', renewed annually';
+    saidRenewal = true;
+    return `${t.name}: ${gbpText(t.amount)} a year${tail}.`;
+  }).join(' ');
+}
 
 async function updateTier(id, input, who) {
   const name = String(input.name || '').trim().slice(0, 80);
   const amount = round2(input.amount);
   const renewal = input.renewal;
+  const kesInput = input.displayKes === undefined || input.displayKes === null ? '' : String(input.displayKes).trim();
+  const displayKes = kesInput === '' ? null : Math.round(Number(kesInput));
   if (name.length < 2) throw new FinanceError('Give the tier a name.');
   if (!(amount > 0) || amount > 100000) throw new FinanceError('Enter an amount between £0.01 and £100,000.');
   if (!['yearly', 'one_off'].includes(renewal)) throw new FinanceError('Renewal must be yearly or one-off.');
+  if (displayKes !== null && !(displayKes >= 1 && displayKes <= 100000000)) throw new FinanceError('The approximate KES amount must be a whole number, or left blank.');
   return db.transaction(async (q) => {
-    const before = await q.one('SELECT name, amount, renewal, active FROM membership_tiers WHERE id = ? FOR UPDATE', [Number(id) || 0]);
+    const before = await q.one('SELECT name, amount, display_kes, renewal, active FROM membership_tiers WHERE id = ? FOR UPDATE', [Number(id) || 0]);
     if (!before) throw new FinanceError('Tier not found.', 404);
-    const after = { name, amount, renewal, active: input.active === false ? 0 : 1 };
-    await q.query('UPDATE membership_tiers SET name = ?, amount = ?, renewal = ?, active = ?, updated_at = UTC_TIMESTAMP(), updated_by = ? WHERE id = ?', [name, amount, renewal, after.active, who.actor, id]);
+    const after = { name, amount, display_kes: displayKes, renewal, active: input.active === false ? 0 : 1 };
+    await q.query('UPDATE membership_tiers SET name = ?, amount = ?, display_kes = ?, renewal = ?, active = ?, updated_at = UTC_TIMESTAMP(), updated_by = ? WHERE id = ?', [name, amount, displayKes, renewal, after.active, who.actor, id]);
     const d = audit.diff(before, after);
     await audit.record(q, { ...who, action: 'tier.updated', entity: 'tier', entityId: id, summary: `Tier "${name}" updated`, ...d });
   });
@@ -403,7 +426,7 @@ ${url ? `<p><a href="${esc(url)}">View or print this receipt</a></p>` : ''}
 module.exports = {
   TYPES, METHODS, CURRENCIES, ACCOUNTS, STATUSES, DONOR_KENYAN, FEE_TYPES, COUNTED, SIGNED_GBP, BALANCE_EXPR, MEMBER_BALANCE_SELECT,
   FinanceError, round2,
-  getFinanceSettings, saveFinanceSettings, listTiers, updateTier,
+  getFinanceSettings, saveFinanceSettings, listTiers, updateTier, publicTiers, tierSentence, gbpText,
   memberFinance, syncMember, syncPledge,
   validate, recordTransaction, updateTransaction, verifyTransaction, reconcileTransaction, rejectTransaction, voidTransaction,
   receiptUrl, renderReceiptPage, emailReceipt,

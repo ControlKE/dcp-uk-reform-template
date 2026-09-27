@@ -39,3 +39,7 @@
   border-radius: 0 var(--radius-card) var(--radius-card) 0;
   padding: 24px 28px;
 }
+/* Membership tiers in the fee callout; filled from the tier table by the server. */
+.tier-list { margin: 0 0 12px; padding: 0; list-style: none; font-size: 13px; color: var(--text-on-light); }
+.tier-list li { padding: 6px 0; border-top: 1px solid rgba(0, 0, 0, .08); }
+.tier-list .tier-kes { color: var(--text-on-light-muted); }

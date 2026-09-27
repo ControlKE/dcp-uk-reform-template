@@ -866,7 +866,7 @@ button.adm-earn-tab.selected { border-color: var(--adm-link); background: var(--
 /* ---------------------------------------------------------------- tiers and settings */
 .adm-spaced { margin-top: 24px; }
 .adm-tiers { display: flex; flex-direction: column; gap: 12px; }
-.adm-tier { display: grid; grid-template-columns: minmax(0, 2fr) minmax(90px, 1fr) minmax(110px, 1fr) auto; gap: 10px; align-items: end; padding-bottom: 12px; border-bottom: 1px solid var(--adm-border); }
+.adm-tier { display: grid; grid-template-columns: minmax(0, 2fr) minmax(90px, 1fr) minmax(110px, 1fr) minmax(110px, 1fr) auto; gap: 10px; align-items: end; padding-bottom: 12px; border-bottom: 1px solid var(--adm-border); }
 @container (max-width: 520px) { .adm-tier { grid-template-columns: 1fr 1fr; } }
 .adm-switch { display: flex; align-items: flex-start; gap: 14px; cursor: pointer; font-size: 14px; }
 .adm-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }

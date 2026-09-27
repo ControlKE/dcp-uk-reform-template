@@ -1,6 +1,6 @@
 // Membership registration: 3 form steps, then the fee payment details, then confirmation.
 (function () {
-  const { request, showAlert, clearErrors, showErrors, addRow, formatMoney, showFee } = window.DCPForms;
+  const { request, showAlert, clearErrors, showErrors, addRow, formatMoney } = window.DCPForms;
   const form = document.getElementById('membership-form');
   if (!form) return;
 
@@ -91,7 +91,9 @@
   function renderFee(fee, reference) {
     const dl = document.getElementById('fee-details');
     dl.replaceChildren();
-    const amount = formatMoney(fee.feeAmount, fee.feeCurrency);
+    // The GBP amount is what is owed; the KES figure is only a guide for M-Pesa payers.
+    const kes = fee.feeKes ? ` (about KES ${Number(fee.feeKes).toLocaleString('en-GB')})` : '';
+    const amount = `${formatMoney(fee.feeAmount, fee.feeCurrency || 'GBP')}${fee.feeRenewal === 'one_off' ? '' : ' for the first year'}${kes}`;
     if (!fee.configured) {
       addRow(dl, 'Amount', amount);
       addRow(dl, 'Your reference', reference, 'ref');
@@ -176,9 +178,6 @@
       nextBtn.disabled = false;
     }
   });
-
-  // Keep the fee shown on the page in line with what the admin has set.
-  request('GET', '/api/payment-details').then(({ feeAccount }) => showFee(feeAccount)).catch(() => {});
 
   // Returning to the page mid-payment (e.g. after a refresh) shows the payment step again.
   const saved = load();

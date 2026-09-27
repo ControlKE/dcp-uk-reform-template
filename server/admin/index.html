@@ -213,6 +213,7 @@
       <!-- ---------------------------------------------------------- Overview -->
       <div data-panel="overview">
         <div class="adm-alert" id="setup-reminder" role="status" hidden></div>
+        <div class="adm-alert" id="verifier-warning" role="status" hidden></div>
         <div class="adm-dash">
           <!-- Row 1: small stat cards + income growth -->
           <section class="adm-card adm-mini adm-span-mini" aria-labelledby="dash-new-title">
@@ -573,25 +574,16 @@
       <div data-panel="accounts" hidden>
         <div class="adm-alert adm-alert-info">
           <svg class="ic"><use href="#i-info"/></svg>
-          <p>These are the accounts shown to the public. Registration fees and donations are paid by the member or donor directly into these accounts; this site never handles the money. <strong>Double-check every digit before saving.</strong></p>
+          <p>These are the accounts shown to the public. Membership fees and donations are paid by the member or donor directly into these accounts; this site never handles the money. <strong>Double-check every digit before saving.</strong></p>
         </div>
         <div class="adm-form-cards">
           <form class="adm-card adm-form-card" id="fee-form" novalidate>
             <div class="adm-card-header adm-card-header-rule">
               <span class="adm-tile adm-tone-primary" aria-hidden="true"><svg class="ic"><use href="#i-cash"/></svg></span>
-              <div><h2 class="adm-card-title">Membership fee account</h2><p class="adm-muted">Where new members pay the one-time registration fee (shown on the Membership page).</p></div>
+              <div><h2 class="adm-card-title">Membership fee account</h2><p class="adm-muted">Where members pay their fees (shown on the Membership page). The amount is not set here: it is the member's tier, under Membership tiers below.</p></div>
             </div>
             <div class="form-alert" role="alert" hidden></div>
             <div class="adm-form-grid">
-              <div class="adm-field"><label for="f-amount">Fee amount</label><input id="f-amount" name="feeAmount" type="number" min="1" step="0.01" required></div>
-              <div class="adm-field"><label for="f-currency">Currency</label>
-                <select id="f-currency" name="feeCurrency">
-                  <option value="GBP">GBP (&pound;)</option>
-                  <option value="KES">KES (Kenyan shillings)</option>
-                  <option value="USD">USD ($)</option>
-                  <option value="EUR">EUR (&euro;)</option>
-                </select>
-              </div>
               <div class="adm-field full"><label for="f-method">Payment method</label>
                 <select id="f-method" name="method">
                   <option value="mpesa_paybill">M-Pesa Paybill</option>
@@ -640,7 +632,7 @@
           <section class="adm-card adm-form-card" aria-labelledby="tiers-title">
             <div class="adm-card-header adm-card-header-rule">
               <span class="adm-tile adm-tone-primary" aria-hidden="true"><svg class="ic"><use href="#i-users"/></svg></span>
-              <div><h2 class="adm-card-title" id="tiers-title">Membership tiers</h2><p class="adm-muted">What each tier costs in GBP and whether it renews every year. A change applies to current balances straight away.</p></div>
+              <div><h2 class="adm-card-title" id="tiers-title">Membership tiers</h2><p class="adm-muted">What each tier costs in GBP and whether it renews every year. A change applies to current balances straight away and to the wording on the Membership page. The KES figure is optional, shown to M-Pesa payers as a rough guide, and never used for billing.</p></div>
             </div>
             <div id="tiers-list" class="adm-tiers"></div>
           </section>

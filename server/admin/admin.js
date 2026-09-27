@@ -464,6 +464,25 @@
       el('p', {}, el('strong', { text: 'Set up payment accounts. ' }), `You haven't saved ${missing.join(' or ')} yet. `,
         el('a', { href: '#accounts', text: 'Open Payment accounts', onclick: (e) => { e.preventDefault(); openTab('accounts'); } })),
       iconButton('x', 'Dismiss reminder', () => { reminder.hidden = true; store.session(dismissKey, '1'); }));
+
+    // Four-eyes on with fewer than two admins able to verify: nothing pending can be verified.
+    const vw = $('#verifier-warning');
+    vw.hidden = !d.verifierWarning;
+    if (d.verifierWarning) {
+      vw.replaceChildren(icon('alert'), el('p', {},
+        el('strong', { text: 'Four-eyes check is on but only one admin can verify payments. ' }),
+        'Add a second Treasurer or Super admin, or turn the check off. ',
+        canDo('finance.settings')
+          ? el('a', { href: '#accounts', text: 'Open finance settings', onclick: (e) => { e.preventDefault(); openFinanceSettings(); } })
+          : 'Ask a Super admin to change it.'));
+    }
+  }
+  // Payment accounts, scrolled to the four-eyes switch.
+  function openFinanceSettings() {
+    openTab('accounts');
+    const form = $('#finance-settings-form');
+    form.scrollIntoView({ block: 'center' });
+    $('#fs-four-eyes').focus({ preventScroll: true });
   }
 
   const onActivate = (node, fn) => {
@@ -631,7 +650,7 @@
   const bellMenu = $('#adm-bell-menu');
   async function loadNotifications() {
     const n = await api('GET', '/api/admin/notifications');
-    await loadLabels().catch(() => {});
+    if (canDo('email')) await loadLabels().catch(() => {});
     const count = n.pending + n.paymentsToCheck + n.unreadMessages + n.failedEmails;
     const badgeEl = $('#adm-bell-count');
     badgeEl.textContent = count > 99 ? '99+' : String(count);
@@ -2427,13 +2446,14 @@
       el('div', { class: 'adm-field' }, el('label', { for: `tier-amount-${t.id}`, text: 'Amount (£)' }), el('input', { id: `tier-amount-${t.id}`, name: 'amount', type: 'number', min: '0.01', step: '0.01', value: String(t.amount) })),
       el('div', { class: 'adm-field' }, el('label', { for: `tier-renewal-${t.id}`, text: 'Renewal' }),
         el('select', { id: `tier-renewal-${t.id}`, name: 'renewal' }, el('option', { value: 'yearly', text: 'Every year' }), el('option', { value: 'one_off', text: 'One-off' }))),
+      el('div', { class: 'adm-field' }, el('label', { for: `tier-kes-${t.id}`, text: 'About (KES)' }), el('input', { id: `tier-kes-${t.id}`, name: 'displayKes', type: 'number', min: '1', step: '1', placeholder: 'Optional', value: t.display_kes === null ? '' : String(Math.round(t.display_kes)), title: 'Approximate, for M-Pesa payers. Display only; never used for billing.' })),
       el('button', { type: 'submit', class: 'adm-btn adm-btn-outline adm-btn-sm' }, 'Save'),
     );
     f.elements.renewal.value = t.renewal;
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
       try {
-        await busy(f, () => api('PUT', `/api/admin/tiers/${t.id}`, { name: f.elements.name.value, amount: Number(f.elements.amount.value), renewal: f.elements.renewal.value }));
+        await busy(f, () => api('PUT', `/api/admin/tiers/${t.id}`, { name: f.elements.name.value, amount: Number(f.elements.amount.value), renewal: f.elements.renewal.value, displayKes: f.elements.displayKes.value }));
         toast(`${f.elements.name.value} saved.`);
         await financeOptions(true);
       } catch (err) { toast(err.message, 'error'); }
