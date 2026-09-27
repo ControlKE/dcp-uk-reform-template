@@ -3,6 +3,7 @@
 // (To reset an existing admin's password, use npm run admin:reset instead.)
 // You'll be asked for the password (it isn't echoed or saved in shell history).
 const db = require('../lib/db');
+const migrations = require('../lib/migrations');
 const { createAdmin } = require('../lib/auth');
 const askHidden = require('./ask-hidden');
 
@@ -21,6 +22,7 @@ if (!username) {
   }
   try {
     await db.init();
+    await migrations.prepare();
     await createAdmin(username, password);
     console.log(`Admin account "${username}" created.`);
     process.exit(0);

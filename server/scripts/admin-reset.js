@@ -7,6 +7,7 @@
 // never written to a file. Resetting also signs that admin out of every session.
 const crypto = require('node:crypto');
 const db = require('../lib/db');
+const migrations = require('../lib/migrations');
 const auth = require('../lib/auth');
 const askHidden = require('./ask-hidden');
 
@@ -45,6 +46,7 @@ async function choosePassword(generate) {
 
   const password = await choosePassword(generate);
   await db.init();
+  await migrations.prepare();
 
   const existing = await db.one('SELECT id FROM admins WHERE username = ?', [username]);
   if (existing) {

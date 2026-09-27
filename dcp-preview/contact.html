@@ -46,30 +46,40 @@
 <section class="section section-light">
   <div class="container">
     <div class="feature-split" style="align-items:flex-start;--split:1.3fr 0.9fr;">
-      <div class="form-card">
+      <div>
+      <form class="form-card" id="contact-form" novalidate>
         <h3 style="margin-top:0;">Send us a message</h3>
+        <div class="form-alert" role="alert" hidden></div>
         <div class="form-grid">
-          <div class="field"><label>Full name *</label><input type="text"></div>
-          <div class="field"><label>Email *</label><input type="email"></div>
-          <div class="field"><label>Phone number</label><input type="tel"></div>
-          <div class="field"><label>Where in the UK are you?</label>
-            <select><option>Select&hellip;</option><option>London</option><option>South East England</option>
+          <div class="field"><label for="c-name">Full name *</label><input id="c-name" name="name" type="text" autocomplete="name" maxlength="120" required></div>
+          <div class="field"><label for="c-email">Email *</label><input id="c-email" name="email" type="email" autocomplete="email" maxlength="200" required></div>
+          <div class="field"><label for="c-phone">Phone number</label><input id="c-phone" name="phone" type="tel" autocomplete="tel" maxlength="30"></div>
+          <div class="field"><label for="c-region">Where in the UK are you?</label>
+            <select id="c-region" name="region"><option value="">Select&hellip;</option><option>London</option><option>South East England</option>
               <option>South West England</option><option>East of England</option><option>West Midlands</option>
               <option>East Midlands</option><option>North West England</option><option>Yorkshire and the Humber</option>
               <option>North East England</option><option>Scotland</option><option>Wales</option>
               <option>Northern Ireland</option><option>Outside the UK</option></select>
           </div>
-          <div class="field"><label>Subject *</label>
-            <select><option>Select a subject&hellip;</option><option>General enquiry</option><option>Membership</option>
+          <div class="field"><label for="c-topic">Subject *</label>
+            <select id="c-topic" name="topic" required><option value="">Select a subject&hellip;</option><option>General enquiry</option><option>Membership</option>
               <option>Find or start a UK chapter</option><option>Events</option><option>Diaspora policy</option>
               <option>Volunteering or a chapter role</option><option>Media enquiry</option>
               <option>Data protection request</option><option>Complaint or feedback</option><option>Website support</option></select>
           </div>
-          <div class="field full"><label>Message *</label><textarea></textarea></div>
-          <div class="field full checkbox-field"><input type="checkbox" style="width:auto;margin-top:3px;"><span>I consent to DCP processing my information to respond to this enquiry.</span></div>
+          <div class="field full"><label for="c-message">Message *</label><textarea id="c-message" name="message" maxlength="5000" required></textarea></div>
+          <div class="field full checkbox-field" data-field="consent"><input id="c-consent" name="consent" type="checkbox" style="width:auto;margin-top:3px;"><label for="c-consent" style="font-weight:400;margin:0;">I consent to DCP processing my information to respond to this enquiry.</label></div>
+          <!-- Left empty by people; bots that fill every field are ignored. -->
+          <div class="hp-field" aria-hidden="true"><label for="c-website">Leave this empty</label><input id="c-website" name="website" type="text" tabindex="-1" autocomplete="off"></div>
         </div>
-        <div class="form-actions"><a href="#" class="btn btn-accent">Send message &#8594;</a></div>
-        <div class="notice-box" style="margin-top:20px;">This form is not yet connected to a mailbox. Until it is, please email the chapter directly.</div>
+        <div class="form-actions"><button type="submit" class="btn btn-accent">Send message &#8594;</button></div>
+      </form>
+      <div class="form-card" id="contact-done" hidden tabindex="-1">
+        <h3 style="margin-top:0;">Message sent</h3>
+        <p>Thank you. Your message has reached the DCP UK chapter team. We will reply to <strong data-reply-to></strong>, usually within a few days.</p>
+        <p style="font-size:14px;color:var(--text-on-light-muted);">If your question is urgent, email <a href="mailto:uk@dcp.or.ke" style="color:var(--accent);">uk@dcp.or.ke</a>.</p>
+        <button type="button" class="btn btn-outline-light btn-sm" data-again>Send another message</button>
+      </div>
       </div>
       <div>
         <div class="simple-card" style="margin-bottom:16px;">
@@ -138,5 +148,7 @@
     </div>
   </div>
 </footer>
+<script src="assets/js/forms.js"></script>
+<script src="assets/js/contact.js"></script>
 </body>
 </html>

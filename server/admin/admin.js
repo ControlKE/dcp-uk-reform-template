@@ -7,7 +7,7 @@
   const PAYMENT_LABELS = { pending_payment: ['Not paid', 'bad'], payment_reported: ['Check payment', 'warn'], paid: ['Paid', 'good'] };
   const STATUS_LABELS = { pending: ['Pending', 'warn'], approved: ['Approved', 'good'], rejected: ['Rejected', 'bad'] };
   const DONATION_LABELS = { pledged: ['Pledged', 'warn'], received: ['Received', 'good'], cancelled: ['Cancelled', ''] };
-  const TAB_TITLES = { overview: 'Dashboard', members: 'Members', donations: 'Donations', accounts: 'Payment accounts', users: 'Admin users' };
+  const TAB_TITLES = { email: 'Email', overview: 'Dashboard', members: 'Members', donations: 'Donations', accounts: 'Payment accounts', users: 'Admin users' };
 
   // ------------------------------------------------------------ helpers
 
@@ -139,6 +139,7 @@
     $('#adm-avatar-2').textContent = initials(admin.username);
     showView('app');
     refreshBadges();
+    loadMailStatus().catch(() => {});
     const { name, params } = parseHash();
     openTab(name, params, { push: false });
   }
@@ -256,6 +257,7 @@
   // The hash holds the section and its table state: #members?status=pending&page=2
   const loaders = {
     overview: () => loadOverview(),
+    email: () => tables.email.load(),
     members: () => tables.members.load(),
     donations: () => tables.donations.load(),
     accounts: () => loadAccounts(),
@@ -375,6 +377,7 @@
     };
     set('#nav-badge-members', s.membersPending, `${s.membersPending} awaiting review`);
     set('#nav-badge-donations', s.donationsPledged, `${s.donationsPledged} pledges awaiting transfer`);
+    set('#nav-badge-email', s.emailsUnread, `${s.emailsUnread} unread`);
   }
   // Keeps sidebar counts and the bell current whichever section is open.
   const refreshBadges = () => Promise.all([
@@ -549,7 +552,8 @@
   const bellMenu = $('#adm-bell-menu');
   async function loadNotifications() {
     const n = await api('GET', '/api/admin/notifications');
-    const count = n.pending + n.paymentsToCheck;
+    await loadLabels().catch(() => {});
+    const count = n.pending + n.paymentsToCheck + n.unreadMessages + n.failedEmails;
     const badgeEl = $('#adm-bell-count');
     badgeEl.textContent = count > 99 ? '99+' : String(count);
     badgeEl.hidden = !count;
@@ -559,6 +563,8 @@
       el('span', { class: `adm-tile adm-tone-${tone}`, 'aria-hidden': 'true' }, icon(iconName)),
       el('span', {}, el('strong', { text: title }), el('span', { class: 'adm-bell-meta', text: meta })));
     const items = [];
+    if (n.unreadMessages) items.push(item('warning', 'mail', `${plural(n.unreadMessages, 'unread message')}`, 'From the website contact form', () => openTab('email', new URLSearchParams({ label: String(mailLabels.find((l) => l.name === 'Contact')?.id || '') }))));
+    if (n.failedEmails) items.push(item('danger', 'alert', `${plural(n.failedEmails, 'email')} failed to send`, 'Open Sent to see the errors', () => openTab('email', new URLSearchParams({ folder: 'sent' }))));
     if (n.paymentsToCheck) items.push(item('bright', 'cash', `${plural(n.paymentsToCheck, 'payment')} to verify`, 'Members who say they have paid', () => showMembers({ payment: 'payment_reported' })));
     for (const m of n.newRegistrations) items.push(item('warning', 'user-plus', `New registration: ${m.full_name}`, `${m.chapter || 'No chapter'} · ${when(m.created_at)}`, () => openMember(m.id)));
     if (n.pending > n.newRegistrations.length) items.push(item('primary', 'users', `All ${n.pending} pending applications`, 'Open the Members list', () => showMembers({ status: 'pending' })));
@@ -716,8 +722,8 @@
   window.addEventListener('resize', () => closeRowMenu());
   document.addEventListener('scroll', (e) => { if (openRowMenu && !openRowMenu.menu.contains(e.target)) closeRowMenu(); }, true);
 
-  function rowMenu(label, items) {
-    const btn = el('button', { type: 'button', class: 'adm-icon-btn', 'aria-label': label, title: 'Actions', 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, icon('dots'));
+  function rowMenu(label, items, iconName = 'dots') {
+    const btn = el('button', { type: 'button', class: 'adm-icon-btn', 'aria-label': label, title: iconName === 'dots' ? 'Actions' : label, 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, icon(iconName));
     const menu = el('div', { class: 'adm-rowmenu-list', role: 'menu', hidden: '' },
       ...items.filter(Boolean).map((it) => el('button', {
         type: 'button', role: 'menuitem', class: it.danger ? 'danger' : '',
@@ -1121,9 +1127,675 @@
     } catch (err) { alertIn(f, err.message); }
   });
 
+  // ------------------------------------------------------------ email app
+
+  const FOLDER_TITLES = { inbox: 'Inbox', sent: 'Sent', draft: 'Drafts', starred: 'Starred', spam: 'Spam', trash: 'Trash' };
+  const SEND_STATUS = { queued: ['Sending…', 'warn'], sent: ['Sent', 'good'], logged: ['Logged, not delivered', ''], partial: ['Partly failed', 'bad'], failed: ['Failed', 'bad'], draft: ['Draft', ''] };
+  const RECIPIENT_STATUS = { queued: ['Queued', 'warn'], sending: ['Sending', 'warn'], sent: ['Sent', 'good'], logged: ['Logged', ''], failed: ['Failed', 'bad'], skipped: ['Skipped', ''] };
+  let mailLabels = [];
+  let mailStatus = null;
+
+  // Red banner on every page when email cannot reach anyone (e.g. MAIL_TRANSPORT=log in production).
+  async function loadMailStatus() {
+    mailStatus = await api('GET', '/api/admin/mail-status');
+    const banner = $('#mail-banner');
+    banner.hidden = !mailStatus.problems.length;
+    banner.replaceChildren(icon('alert'), el('div', {},
+      el('strong', { text: 'Email is not set up correctly. ' }),
+      el('ul', {}, ...mailStatus.problems.map((p) => el('li', { text: p })))));
+    $('#mail-transport').textContent = mailStatus.transport === 'log'
+      ? 'Sending: log only. Messages are stored, not delivered.'
+      : `Sending via ${mailStatus.transport} as ${mailStatus.from.email}`;
+    $('#cp-from').textContent = `From ${mailStatus.from.name ? `${mailStatus.from.name} <${mailStatus.from.email}>` : mailStatus.from.email}${mailStatus.replyTo ? ` · replies go to ${mailStatus.replyTo}` : ''}`;
+  }
+
+  async function loadLabels() {
+    if (mailLabels.length) return;
+    mailLabels = (await api('GET', '/api/admin/email-labels')).labels;
+  }
+  const labelById = (id) => mailLabels.find((l) => l.id === Number(id));
+  const labelDot = (l) => el('span', { class: `adm-dot adm-dot-${l.color}`, title: l.name, 'aria-hidden': 'true' });
+
+  const emailApp = (() => {
+    const state = { folder: 'inbox', label: '', q: '', page: 1, pageSize: DEFAULT_PAGE_SIZE, open: 0 };
+    let rows = [];
+    let total = 0;
+    const selected = new Set();
+    let current = null;
+    let seq = 0;
+
+    function params() {
+      const p = new URLSearchParams();
+      if (state.label) p.set('label', state.label); else if (state.folder !== 'inbox') p.set('folder', state.folder);
+      if (state.q) p.set('q', state.q);
+      if (state.page > 1) p.set('page', String(state.page));
+      if (state.pageSize !== DEFAULT_PAGE_SIZE) p.set('pageSize', String(state.pageSize));
+      if (state.open) p.set('open', String(state.open));
+      return p;
+    }
+    function setFromParams(p) {
+      state.label = Number(p.get('label')) ? p.get('label') : '';
+      state.folder = [...Object.keys(FOLDER_TITLES)].includes(p.get('folder')) ? p.get('folder') : 'inbox';
+      state.q = p.get('q') || '';
+      state.page = Math.max(1, Math.floor(Number(p.get('page'))) || 1);
+      state.pageSize = PAGE_SIZES.includes(Number(p.get('pageSize'))) ? Number(p.get('pageSize')) : DEFAULT_PAGE_SIZE;
+      state.open = Number(p.get('open')) || 0;
+      $('#mail-search').value = state.q;
+      $('#mail-size').value = String(state.pageSize);
+    }
+    const update = (replace = false) => { setTabUrl('email', params(), replace); load().catch((err) => toast(err.message, 'error')); };
+
+    function renderSide(counts, labelCounts) {
+      $$('#mail-side [data-folder]').forEach((b) => {
+        const on = !state.label && b.dataset.folder === state.folder;
+        b.classList.toggle('selected', on);
+        if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+      });
+      const set = (key, n) => { const c = $(`[data-count="${key}"]`); c.textContent = String(n); c.hidden = !n; };
+      set('inbox', counts.inbox); set('draft', counts.draft); set('spam', counts.spam); set('starred', counts.starred); set('sent', counts.sent_attention);
+      $('[data-count="sent"]').title = counts.sent_attention ? 'Sending, failed or partly failed' : '';
+      $('#mail-labels').replaceChildren(...mailLabels.map((l) => el('button', {
+        type: 'button', class: String(l.id) === String(state.label) ? 'selected' : '', ...(String(l.id) === String(state.label) ? { 'aria-current': 'page' } : {}),
+        onclick: () => { state.label = String(l.id); state.page = 1; state.open = 0; selected.clear(); closeSide(); update(); },
+      }, labelDot(l), el('span', { text: l.name }), labelCounts[l.id] ? el('span', { class: 'adm-mail-count', text: String(labelCounts[l.id]) }) : '')));
+      const navBadge = $('#nav-badge-email');
+      navBadge.textContent = String(counts.inbox);
+      navBadge.hidden = !counts.inbox;
+      navBadge.setAttribute('aria-label', `${counts.inbox} unread`);
+    }
+
+    function renderBulk() {
+      const bar = $('#mail-bulk');
+      const all = $('#mail-select-all');
+      all.checked = rows.length > 0 && rows.every((r) => selected.has(r.id));
+      all.indeterminate = !all.checked && rows.some((r) => selected.has(r.id));
+      bar.hidden = !selected.size;
+      $('#mail-tools').hidden = selected.size > 0;
+      if (!selected.size) return;
+      const ids = [...selected];
+      const inTrash = state.folder === 'trash' && !state.label;
+      const act = (action, value, done) => async () => {
+        try {
+          await api('POST', '/api/admin/emails/bulk', { ids, action, value });
+          toast(done);
+          selected.clear();
+          load();
+        } catch (err) { toast(err.message, 'error'); }
+      };
+      bar.replaceChildren(
+        el('span', { class: 'adm-mail-selected', text: `${ids.length} selected` }),
+        iconButton('mail-opened', 'Mark as read', act('read', null, 'Marked as read.')),
+        iconButton('mail', 'Mark as unread', act('unread', null, 'Marked as unread.')),
+        rowMenu('Move to', [
+          { icon: 'inbox-in', text: 'Inbox', onClick: act('move', 'inbox', 'Moved to Inbox.') },
+          { icon: 'ban', text: 'Spam', onClick: act('move', 'spam', 'Moved to Spam.') },
+          inTrash ? { icon: 'rotate', text: 'Restore', onClick: act('restore', null, 'Restored.') } : { icon: 'trash', text: 'Trash', onClick: act('move', 'trash', 'Moved to Trash.') },
+        ], 'folder-move'),
+        rowMenu('Label', mailLabels.flatMap((l) => [
+          { icon: 'tag', text: `Add “${l.name}”`, onClick: act('label', l.id, `Labelled ${l.name}.`) },
+          { icon: 'x', text: `Remove “${l.name}”`, onClick: act('unlabel', l.id, `Removed label ${l.name}.`) },
+        ]), 'tag'),
+        iconButton('trash', inTrash ? 'Delete permanently' : 'Delete', async () => {
+          if (inTrash && !confirm(`Delete ${ids.length} message${ids.length === 1 ? '' : 's'} permanently?`)) return;
+          await act('delete', null, inTrash ? 'Deleted permanently.' : 'Moved to Trash.')();
+        }, 'danger'),
+      );
+    }
+
+    function rowFor(e) {
+      const outbound = e.direction === 'out';
+      const who = outbound ? `To: ${e.to_summary || '(no recipients)'}` : (e.from_name || e.from_email);
+      const star = el('button', {
+        type: 'button', class: `adm-star${e.is_starred ? ' on' : ''}`, 'aria-pressed': String(Boolean(e.is_starred)),
+        'aria-label': e.is_starred ? 'Unstar' : 'Star',
+        onclick: async (ev) => {
+          ev.stopPropagation();
+          await api('POST', '/api/admin/emails/bulk', { ids: [e.id], action: e.is_starred ? 'unstar' : 'star' }).catch((err) => toast(err.message, 'error'));
+          load();
+        },
+      }, icon('star'));
+      const box = el('input', {
+        type: 'checkbox', class: 'adm-check', 'aria-label': `Select “${e.subject || '(no subject)'}”`,
+        onclick: (ev) => ev.stopPropagation(),
+        onchange: (ev) => { if (ev.target.checked) selected.add(e.id); else selected.delete(e.id); renderBulk(); },
+      });
+      box.checked = selected.has(e.id);
+      const status = outbound && e.status !== 'sent' ? SEND_STATUS[e.status] : null;
+      return el('li', {
+        class: `adm-mail-row${e.is_read ? '' : ' unread'}`, tabindex: '0',
+        onclick: () => openEmail(e.id),
+        onkeydown: (ev) => { if (ev.key === 'Enter' && ev.target === ev.currentTarget) openEmail(e.id); },
+      },
+        box, star,
+        el('span', { class: 'adm-mail-who', title: who, text: who }),
+        el('span', { class: 'adm-mail-what' },
+          el('span', { class: 'adm-mail-subject', text: e.subject || '(no subject)' }),
+          el('span', { class: 'adm-mail-snippet', text: e.snippet ? ` – ${e.snippet.replace(/\s+/g, ' ')}` : '' })),
+        el('span', { class: 'adm-mail-meta' },
+          ...e.label_ids.map(labelById).filter(Boolean).map(labelDot),
+          e.attachments ? el('span', { class: 'adm-mail-clip', title: `${e.attachments} attachment${e.attachments === 1 ? '' : 's'}` }, icon('paperclip')) : '',
+          e.category === 'bulk' ? el('span', { class: 'adm-badge', text: `Bulk · ${e.recipient_count}` }) : '',
+          status ? badge(status) : '',
+          el('time', { class: 'adm-mail-date', datetime: e.created_at, title: when(e.created_at), text: shortDate(e.created_at) })),
+      );
+    }
+
+    async function load() {
+      const mySeq = ++seq;
+      await loadLabels();
+      const p = new URLSearchParams({ page: String(state.page), pageSize: String(state.pageSize) });
+      if (state.label) p.set('label', state.label); else p.set('folder', state.folder);
+      if (state.q) p.set('q', state.q);
+      const list = $('#mail-list');
+      list.setAttribute('aria-busy', 'true');
+      const data = await api('GET', `/api/admin/emails?${p}`);
+      if (mySeq !== seq) return;
+      list.removeAttribute('aria-busy');
+      rows = data.emails;
+      total = data.total;
+      if (data.page !== state.page) { state.page = data.page; setTabUrl('email', params(), true); }
+      for (const id of [...selected]) if (!rows.some((r) => r.id === id)) selected.delete(id);
+      renderSide(data.counts, data.labelCounts);
+      const label = state.label && labelById(state.label);
+      $('#mail-title').textContent = label ? `Label: ${label.name}` : FOLDER_TITLES[state.folder];
+      list.replaceChildren(...(rows.length ? rows.map(rowFor) : [el('li', { class: 'adm-mail-empty' },
+        el('span', { class: 'adm-tile adm-tone-primary' }, icon('inbox')),
+        el('strong', { text: state.q ? 'No messages match your search' : `Nothing in ${label ? label.name : FOLDER_TITLES[state.folder]}` }),
+        el('span', { text: state.folder === 'inbox' && !state.q ? 'Contact-form messages and new membership applications arrive here.' : '' }))]));
+      renderBulk();
+      renderFooter();
+      if (state.open) await showDetail(state.open); else showList();
+    }
+
+    function renderFooter() {
+      const last = Math.max(1, Math.ceil(total / state.pageSize));
+      const from = total ? (state.page - 1) * state.pageSize + 1 : 0;
+      $('#mail-count').textContent = total ? `Showing ${from}–${Math.min(total, state.page * state.pageSize)} of ${total}` : 'No messages';
+      const go = (n) => { state.page = n; selected.clear(); update(); };
+      const pager = $('#mail-pager');
+      if (last === 1) { pager.replaceChildren(); return; }
+      const nav = (name, label, target, disabled) => { const b = iconButton(name, label, () => go(target), 'adm-page'); b.disabled = disabled; return b; };
+      pager.replaceChildren(
+        nav('chevrons-left', 'First page', 1, state.page === 1), nav('chevron-left', 'Previous page', state.page - 1, state.page === 1),
+        ...pageNumbers(state.page, last).map((n) => (n === '…' ? el('span', { class: 'adm-page-gap', text: '…', 'aria-hidden': 'true' })
+          : el('button', { type: 'button', class: `adm-page${n === state.page ? ' current' : ''}`, 'aria-label': `Page ${n}`, ...(n === state.page ? { 'aria-current': 'page' } : {}), onclick: () => go(n) }, String(n)))),
+        nav('chevron-right', 'Next page', state.page + 1, state.page === last), nav('chevrons-right', 'Last page', last, state.page === last),
+      );
+    }
+
+    function showList() {
+      current = null;
+      $('#mail-detail').hidden = true;
+      $('#mail-list-view').hidden = false;
+    }
+
+    function openEmail(id) {
+      const row = rows.find((r) => r.id === id);
+      if (row && row.folder === 'draft') { state.open = 0; composer.openDraft(id); return; }
+      state.open = id;
+      setTabUrl('email', params());
+      showDetail(id).catch((err) => toast(err.message, 'error'));
+    }
+
+    async function showDetail(id) {
+      const d = await api('GET', `/api/admin/emails/${id}`);
+      current = d;
+      const e = d.email;
+      const row = rows.find((r) => r.id === id);
+      if (row && !row.is_read) { row.is_read = 1; refreshBadges(); }
+      $('#mail-list-view').hidden = true;
+      $('#mail-detail').hidden = false;
+      $('#mail-subject').textContent = e.subject || '(no subject)';
+      $('#mail-chips').replaceChildren(...d.labels.map(labelById).filter(Boolean).map((l) => el('span', { class: `adm-label-chip adm-chip-${l.color}` }, labelDot(l), l.name)),
+        e.category === 'bulk' ? el('span', { class: 'adm-label-chip', text: 'Bulk' }) : '');
+      const idx = rows.findIndex((r) => r.id === id);
+      $('#mail-prev').disabled = idx <= 0;
+      $('#mail-next').disabled = idx < 0 || idx >= rows.length - 1;
+      const act = (action, value, done, after) => async () => {
+        try { await api('POST', '/api/admin/emails/bulk', { ids: [id], action, value }); toast(done); if (after) after(); else showDetail(id); load(); } catch (err) { toast(err.message, 'error'); }
+      };
+      const back = () => { state.open = 0; setTabUrl('email', params()); showList(); };
+      $('#mail-actions').replaceChildren(
+        iconButton('trash', e.folder === 'trash' ? 'Delete permanently' : 'Delete', async () => {
+          if (e.folder === 'trash' && !confirm('Delete this message permanently?')) return;
+          await act('delete', null, e.folder === 'trash' ? 'Deleted permanently.' : 'Moved to Trash.', back)();
+        }, 'danger'),
+        iconButton('mail', 'Mark as unread', act('unread', null, 'Marked as unread.', back)),
+        e.direction === 'in' ? rowMenu('Move to', [
+          e.folder !== 'inbox' && { icon: 'inbox-in', text: 'Inbox', onClick: act('move', 'inbox', 'Moved to Inbox.') },
+          e.folder !== 'spam' && { icon: 'ban', text: 'Spam', onClick: act('move', 'spam', 'Moved to Spam.', back) },
+        ], 'folder-move') : '',
+        e.folder === 'trash' ? iconButton('rotate', 'Restore', act('restore', null, 'Restored.')) : '',
+        rowMenu('Label', mailLabels.map((l) => (d.labels.includes(l.id)
+          ? { icon: 'x', text: `Remove “${l.name}”`, onClick: act('unlabel', l.id, `Removed label ${l.name}.`) }
+          : { icon: 'tag', text: `Add “${l.name}”`, onClick: act('label', l.id, `Labelled ${l.name}.`) })), 'tag'),
+        el('button', {
+          type: 'button', class: `adm-icon-btn adm-star${e.is_starred ? ' on' : ''}`, 'aria-pressed': String(Boolean(e.is_starred)), 'aria-label': e.is_starred ? 'Unstar' : 'Star',
+          onclick: act(e.is_starred ? 'unstar' : 'star', null, e.is_starred ? 'Unstarred.' : 'Starred.'),
+        }, icon('star')),
+      );
+
+      const outbound = e.direction === 'out';
+      const whoName = outbound ? (e.from_name || 'DCP UK') : (e.from_name || e.from_email);
+      const body = el('div', { class: 'adm-mail-body' });
+      if (e.body_html) body.innerHTML = e.body_html; // sanitised on the server (sanitize-html); the CSP also blocks inline script
+      else body.textContent = e.body_text || '';
+      if (!e.body_html) body.classList.add('plain');
+      const totals = d.recipientTotals || {};
+      const recipientList = outbound && d.recipients.length ? el('details', { class: 'adm-mail-recipients', ...(totals.failed ? { open: '' } : {}) },
+        el('summary', {}, `Delivery: ${Object.entries(totals).map(([k, n]) => `${n} ${(RECIPIENT_STATUS[k] || [k])[0].toLowerCase()}`).join(', ')}`,
+          e.excluded_count ? ` · ${e.excluded_count} excluded before sending (no consent or unsubscribed)` : ''),
+        el('ul', {}, ...d.recipients.map((r) => el('li', {},
+          el('span', { class: 'adm-break', text: `${r.kind !== 'to' ? `${r.kind.toUpperCase()}: ` : ''}${r.name ? `${r.name} <${r.address}>` : r.address}` }),
+          badge(RECIPIENT_STATUS[r.status] || [r.status, '']),
+          r.last_error ? el('span', { class: 'adm-mail-error', text: r.last_error }) : ''))),
+        d.recipients.length < (Object.values(totals).reduce((s, n) => s + n, 0)) ? el('p', { class: 'adm-muted', text: 'Showing the first 500 recipients.' }) : '') : '';
+      $('#mail-thread').replaceChildren(el('div', { class: 'adm-mail-card' },
+        el('div', { class: 'adm-mail-card-head' },
+          el('span', { class: 'adm-avatar', 'aria-hidden': 'true', text: initials(String(whoName).replace(/\s+/g, '.')) }),
+          el('div', { class: 'adm-mail-from' },
+            el('strong', { text: whoName }),
+            el('span', { text: outbound ? `to ${e.to_summary || ''}` : `<${e.from_email}>${e.reply_to && e.reply_to !== e.from_email ? ` · reply to ${e.reply_to}` : ''}` })),
+          el('span', { class: 'adm-mail-when', text: when(e.sent_at || e.created_at) }),
+          outbound ? badge(SEND_STATUS[e.status] || [e.status, '']) : ''),
+        body,
+        d.attachments.length ? el('div', { class: 'adm-mail-files' }, el('p', { class: 'adm-mail-heading', text: `${d.attachments.length} attachment${d.attachments.length === 1 ? '' : 's'}` }),
+          ...d.attachments.map((a) => el('a', { class: 'adm-file', href: `/api/admin/email-attachments/${a.id}`, download: a.filename }, icon('paperclip'), el('span', { text: a.filename }), el('span', { class: 'adm-muted', text: fileSize(a.size) })))) : '',
+        recipientList,
+        e.member_id ? el('p', { class: 'adm-mail-member' }, el('button', { type: 'button', class: 'adm-link-btn', onclick: () => openMember(e.member_id) }, 'Open this member’s record')) : '',
+      ));
+      $('#mail-replybar').hidden = e.folder === 'draft';
+      $('#mail-reply').hidden = outbound && e.source !== 'reply' && e.category === 'bulk';
+    }
+
+    // Reply goes to the sender's reply address (the contact form's email).
+    function replyTarget() {
+      const e = current.email;
+      if (e.direction === 'in') return { address: e.reply_to || e.from_email, name: e.from_name || '', memberId: e.member_id || null };
+      const to = current.recipients.find((r) => r.kind === 'to');
+      return to ? { address: to.address, name: to.name || '', memberId: to.member_id || null } : null;
+    }
+    function quoted() {
+      const e = current.email;
+      const original = e.body_html || escapeHtml(e.body_text || '').replace(/\n/g, '<br>');
+      return `<p><br></p><p>On ${escapeHtml(when(e.created_at))}, ${escapeHtml(e.from_name || e.from_email || 'DCP UK')} wrote:</p><blockquote>${original}</blockquote>`;
+    }
+    $('#mail-reply').addEventListener('click', () => {
+      const t = replyTarget();
+      if (!t) return;
+      const e = current.email;
+      composer.open({
+        to: [t.memberId ? { type: 'member', id: t.memberId, label: t.name || t.address, email: t.address } : { type: 'address', address: t.address, name: t.name }],
+        subject: /^re:/i.test(e.subject) ? e.subject : `Re: ${e.subject}`, html: quoted(), inReplyTo: e.id,
+      });
+    });
+    $('#mail-forward').addEventListener('click', () => {
+      const e = current.email;
+      composer.open({ subject: /^fwd:/i.test(e.subject) ? e.subject : `Fwd: ${e.subject}`, html: `<p><br></p><p>---------- Forwarded message ----------</p>${quoted()}` });
+      if (current.attachments.length) toast('Attachments are not forwarded. Download and attach them if needed.', 'info');
+    });
+    $('#mail-back').addEventListener('click', () => { state.open = 0; setTabUrl('email', params()); showList(); $('#mail-list .adm-mail-row')?.focus(); });
+    const step = (dir) => () => {
+      const idx = rows.findIndex((r) => r.id === current?.email.id);
+      const next = rows[idx + dir];
+      if (next) openEmail(next.id);
+    };
+    $('#mail-prev').addEventListener('click', step(-1));
+    $('#mail-next').addEventListener('click', step(1));
+
+    // Side panel (folders and labels) is off-canvas on phones.
+    const closeSide = () => { $('#mail-side').classList.remove('open'); $('#mail-scrim').hidden = true; $('#mail-side-toggle').setAttribute('aria-expanded', 'false'); };
+    $('#mail-side-toggle').addEventListener('click', () => { $('#mail-side').classList.add('open'); $('#mail-scrim').hidden = false; $('#mail-side-toggle').setAttribute('aria-expanded', 'true'); $('#mail-side button').focus(); });
+    $('#mail-scrim').addEventListener('click', closeSide);
+    $$('#mail-side [data-folder]').forEach((b) => b.addEventListener('click', () => {
+      state.folder = b.dataset.folder; state.label = ''; state.page = 1; state.open = 0; selected.clear(); closeSide(); update();
+    }));
+    $('#mail-search').addEventListener('input', debounce(() => { state.q = $('#mail-search').value.trim(); state.page = 1; state.open = 0; update(true); }, 300));
+    $('#mail-size').addEventListener('change', () => { state.pageSize = Number($('#mail-size').value); state.page = 1; update(); });
+    $('#mail-refresh').addEventListener('click', () => { load().then(() => toast('Mailbox refreshed.', 'info')).catch((err) => toast(err.message, 'error')); });
+    $('#mail-select-all').addEventListener('change', (ev) => { rows.forEach((r) => (ev.target.checked ? selected.add(r.id) : selected.delete(r.id))); load(); });
+    $('#mail-compose').addEventListener('click', () => composer.open({}));
+
+    return { name: 'email', load, params, setFromParams, reload: () => load() };
+  })();
+
+  const shortDate = (sqlDate) => {
+    if (!sqlDate) return '';
+    const d = new Date(sqlDate.replace(' ', 'T') + 'Z');
+    return d.toDateString() === new Date().toDateString()
+      ? d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+      : d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  };
+  const fileSize = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
+  const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
+  // ------------------------------------------------------------ compose
+
+  const composer = (() => {
+    const dlg = $('#compose-dialog');
+    const form = $('#cp-form');
+    const toBox = $('#cp-to');
+    const toInput = $('#cp-to-input');
+    const suggest = $('#cp-to-list');
+    const bodyEl = $('#cp-body');
+    const CHAPTERS = ['London', 'Manchester', 'Birmingham', 'Leeds', 'Glasgow', 'Cardiff', 'Nottingham', 'Belfast', 'None nearby'];
+    const SEG_VALUES = {
+      chapter: CHAPTERS.map((c) => [c, c]),
+      status: [['approved', 'Approved'], ['pending', 'Pending review'], ['rejected', 'Rejected']],
+      payment: [['paid', 'Paid (confirmed)'], ['payment_reported', 'Reported paid'], ['pending_payment', 'Not paid']],
+    };
+    let tokens = [];
+    let attachments = [];
+    let templates = [];
+    let draftId = null;
+    let inReplyTo = null;
+    let audience = null;
+    let dirty = false;
+    let confirmArmed = false;
+    let options = [];
+    let active = -1;
+
+    const csv = (s) => String(s || '').split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
+    const payload = () => ({
+      to: tokens.filter((t) => t.type !== 'segment').map((t) => (t.type === 'member' ? { memberId: t.id } : { address: t.address, name: t.name || '' })),
+      segments: tokens.filter((t) => t.type === 'segment').map((t) => ({ type: t.segType, value: t.value })),
+      cc: csv($('#cp-cc').value), bcc: csv($('#cp-bcc').value),
+    });
+
+    function renderTokens() {
+      $$('.adm-token', toBox).forEach((n) => n.remove());
+      tokens.forEach((t, i) => {
+        const label = t.type === 'segment' ? t.label : t.type === 'member' ? `${t.label}` : (t.name ? `${t.name} <${t.address}>` : t.address);
+        toBox.insertBefore(el('span', { class: `adm-token${t.type === 'segment' ? ' seg' : ''}`, title: t.type === 'member' ? t.email : '' },
+          t.type === 'segment' ? icon('users') : '', label,
+          el('button', { type: 'button', 'aria-label': `Remove ${label}`, onclick: () => { tokens.splice(i, 1); dirty = true; renderTokens(); toInput.focus(); } }, icon('x'))), toInput);
+      });
+      toInput.placeholder = tokens.length ? '' : 'Name, email or reference';
+      refreshAudience();
+    }
+
+    async function computeAudience(keepConfirm = false) {
+      if (!keepConfirm) confirmArmed = false;
+      setSendLabel();
+      const box = $('#cp-audience');
+      const p = payload();
+      if (!p.to.length && !p.segments.length) { audience = null; box.replaceChildren(); box.className = 'adm-cp-audience'; return; }
+      try { audience = await api('POST', '/api/admin/emails/audience', p); } catch (err) { box.textContent = err.message; return; }
+      const a = audience;
+      const parts = [];
+      box.className = `adm-cp-audience ${a.errors.length || a.bulkBlocked ? 'bad' : a.category === 'bulk' ? 'bulk' : ''}`;
+      if (a.errors.length) parts.push(el('strong', { text: a.errors[0] }));
+      else if (a.category === 'bulk') {
+        parts.push(icon('users'), el('span', {}, el('strong', { text: `Bulk email to ${a.recipients} member${a.recipients === 1 ? '' : 's'}.` }), ' Each copy is personalised and has an unsubscribe link.'));
+        const ex = [];
+        if (a.excluded.noConsent) ex.push(`${a.excluded.noConsent} without data consent`);
+        if (a.excluded.optedOut) ex.push(`${a.excluded.optedOut} unsubscribed`);
+        if (a.excluded.notMember) ex.push(`${a.excluded.notMember} non-member address${a.excluded.notMember === 1 ? '' : 'es'} (bulk email goes to members only)`);
+        if (ex.length) parts.push(el('span', { class: 'adm-cp-excluded', text: `${a.excludedTotal} excluded: ${ex.join(', ')}.` }));
+        if (a.bulkBlocked) parts.push(el('strong', { text: 'Bulk sending is disabled until APP_SECRET is set.' }));
+      } else parts.push(icon('user'), el('span', {}, el('strong', { text: `To ${a.recipients} person.` }), ' Service message: no newsletter footer or unsubscribe link.'));
+      box.replaceChildren(...parts);
+      setSendLabel();
+    }
+    const refreshAudience = debounce(() => computeAudience(), 250);
+
+    function setSendLabel() {
+      const label = $('#cp-send span');
+      if (confirmArmed && audience?.category === 'bulk') label.textContent = `Confirm: send to ${audience.recipients}`;
+      else label.textContent = audience?.category === 'bulk' ? `Send to ${audience.recipients} members` : 'Send';
+    }
+
+    // ---- recipient autocomplete
+    function closeSuggest() { suggest.hidden = true; toInput.setAttribute('aria-expanded', 'false'); toInput.removeAttribute('aria-activedescendant'); active = -1; }
+    function choose(i) {
+      const o = options[i];
+      if (!o) return;
+      if (!tokens.some((t) => (o.type === 'member' ? t.id === o.id : t.address === o.address))) tokens.push(o);
+      toInput.value = '';
+      dirty = true;
+      closeSuggest();
+      renderTokens();
+    }
+    const lookup = debounce(async () => {
+      const q = toInput.value.trim();
+      if (q.length < 2) { closeSuggest(); return; }
+      const { members } = await api('GET', `/api/admin/members/lookup?q=${encodeURIComponent(q)}`).catch(() => ({ members: [] }));
+      options = members.map((m) => ({ type: 'member', id: m.id, label: m.full_name, email: m.email, consent: Boolean(m.consent), optedOut: Boolean(m.opted_out) }));
+      if (/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(q) && !options.some((o) => o.email === q.toLowerCase())) options.push({ type: 'address', address: q.toLowerCase(), name: '' });
+      suggest.replaceChildren(...(options.length ? options.map((o, i) => el('div', {
+        class: 'adm-gsearch-item', role: 'option', id: `cp-opt-${i}`, 'aria-selected': 'false', onmousedown: (ev) => { ev.preventDefault(); choose(i); },
+      }, icon(o.type === 'member' ? 'user' : 'mail'), el('div', {},
+        el('strong', { text: o.type === 'member' ? o.label : `Send to ${o.address}` }),
+        el('span', { text: o.type === 'member' ? `${o.email}${o.optedOut ? ' · unsubscribed from bulk' : !o.consent ? ' · no data consent (one-to-one only)' : ''}` : 'Not a member: one-to-one messages only' })))) : [el('p', { class: 'adm-gsearch-empty', text: 'No matching members. Type a full email address to send to someone else.' })]));
+      suggest.hidden = false;
+      toInput.setAttribute('aria-expanded', 'true');
+      active = options.length ? 0 : -1;
+      markActive();
+    }, 200);
+    function markActive() {
+      $$('.adm-gsearch-item', suggest).forEach((n, j) => n.setAttribute('aria-selected', String(j === active)));
+      if (active >= 0) toInput.setAttribute('aria-activedescendant', `cp-opt-${active}`);
+    }
+    toInput.addEventListener('input', lookup);
+    toInput.addEventListener('keydown', (ev) => {
+      if ((ev.key === 'ArrowDown' || ev.key === 'ArrowUp') && !suggest.hidden && options.length) {
+        ev.preventDefault();
+        active = (active + (ev.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length;
+        markActive();
+      } else if (ev.key === 'Enter' || ev.key === ',' || ev.key === 'Tab') {
+        if (!suggest.hidden && active >= 0) { ev.preventDefault(); choose(active); }
+        else if (/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(toInput.value.trim())) { ev.preventDefault(); options = [{ type: 'address', address: toInput.value.trim().toLowerCase(), name: '' }]; choose(0); }
+      } else if (ev.key === 'Backspace' && !toInput.value && tokens.length) { tokens.pop(); renderTokens(); }
+      else if (ev.key === 'Escape' && !suggest.hidden) { ev.preventDefault(); ev.stopPropagation(); closeSuggest(); }
+    });
+    toInput.addEventListener('blur', () => setTimeout(closeSuggest, 120));
+    toBox.addEventListener('click', (ev) => { if (ev.target === toBox) toInput.focus(); });
+
+    // ---- segments and cc/bcc
+    const segType = $('#cp-seg-type');
+    const segValue = $('#cp-seg-value');
+    function syncSegValues() {
+      const values = SEG_VALUES[segType.value];
+      segValue.hidden = !values;
+      segValue.replaceChildren(...(values || []).map(([v, l]) => el('option', { value: v, text: l })));
+    }
+    segType.addEventListener('change', syncSegValues);
+    $('#cp-seg-btn').addEventListener('click', () => {
+      const seg = $('#cp-seg');
+      seg.hidden = !seg.hidden;
+      $('#cp-seg-btn').setAttribute('aria-expanded', String(!seg.hidden));
+      if (!seg.hidden) segType.focus();
+    });
+    $('#cp-seg-add').addEventListener('click', () => {
+      const type = segType.value;
+      const value = SEG_VALUES[type] ? segValue.value : null;
+      const label = type === 'all' ? 'All members' : `${segType.selectedOptions[0].textContent.replace(/^By /, '').replace(/^./, (c) => c.toUpperCase())}: ${segValue.selectedOptions[0].textContent}`;
+      if (!tokens.some((t) => t.type === 'segment' && t.segType === type && t.value === value)) tokens.push({ type: 'segment', segType: type, value, label });
+      dirty = true;
+      $('#cp-seg').hidden = true;
+      $('#cp-seg-btn').setAttribute('aria-expanded', 'false');
+      renderTokens();
+    });
+    $('#cp-ccbcc-btn').addEventListener('click', () => {
+      const show = $('#cp-cc-row').hidden;
+      $('#cp-cc-row').hidden = !show; $('#cp-bcc-row').hidden = !show;
+      $('#cp-ccbcc-btn').setAttribute('aria-expanded', String(show));
+      if (show) $('#cp-cc').focus();
+    });
+    ['#cp-cc', '#cp-bcc'].forEach((s) => $(s).addEventListener('input', () => { dirty = true; refreshAudience(); }));
+    ['#cp-subject'].forEach((s) => $(s).addEventListener('input', () => { dirty = true; }));
+
+    // ---- editor (contenteditable, cleaned on the server)
+    $$('.adm-editor-bar [data-cmd]').forEach((b) => b.addEventListener('click', () => {
+      bodyEl.focus();
+      if (b.dataset.cmd === 'link') {
+        const url = prompt('Link address (https://…)');
+        if (!url) return;
+        if (!/^(https?:\/\/|mailto:)/i.test(url.trim())) { toast('Links must start with https://, http:// or mailto:', 'error'); return; }
+        document.execCommand('createLink', false, url.trim());
+      } else document.execCommand(b.dataset.cmd, false, null);
+      dirty = true;
+    }));
+    $$('.adm-editor-bar [data-merge]').forEach((b) => b.addEventListener('click', () => { bodyEl.focus(); document.execCommand('insertText', false, `{{${b.dataset.merge}}}`); dirty = true; }));
+    bodyEl.addEventListener('input', () => { dirty = true; });
+    bodyEl.addEventListener('paste', (ev) => {
+      // Paste as plain text: pasted HTML from Word or web pages carries styles the email would not keep.
+      ev.preventDefault();
+      document.execCommand('insertText', false, ev.clipboardData.getData('text/plain'));
+    });
+
+    // ---- templates
+    async function loadTemplates() {
+      if (templates.length) return;
+      templates = (await api('GET', '/api/admin/email-templates')).templates;
+      $('#cp-template').replaceChildren(el('option', { value: '', text: 'Blank message' }), ...templates.map((t) => {
+        const o = el('option', { value: t.key, text: `${t.name}${t.systemOnly ? ' (sent automatically)' : t.bulkOnly ? ' (bulk only)' : ''}` });
+        if (t.systemOnly) o.disabled = true;
+        return o;
+      }));
+    }
+    $('#cp-template').addEventListener('change', (ev) => {
+      const t = templates.find((x) => x.key === ev.target.value);
+      if (!t) return;
+      if (bodyEl.textContent.trim() && !confirm('Replace the current message with this template?')) { ev.target.value = ''; return; }
+      $('#cp-subject').value = t.subject;
+      bodyEl.innerHTML = t.html;
+      dirty = true;
+    });
+
+    // ---- attachments (uploaded straight away, attached on send)
+    function renderAttachments() {
+      $('#cp-att').replaceChildren(...attachments.map((a, i) => el('li', { class: 'adm-file' }, icon('paperclip'), el('span', { text: a.filename }),
+        el('span', { class: 'adm-muted', text: a.uploading ? 'uploading…' : fileSize(a.size) }),
+        a.uploading ? '' : el('button', { type: 'button', class: 'adm-icon-btn', 'aria-label': `Remove ${a.filename}`, onclick: () => {
+          attachments.splice(i, 1);
+          renderAttachments();
+          if (!draftId) api('DELETE', `/api/admin/email-attachments/${a.id}`).catch(() => {});
+        } }, icon('x')))));
+    }
+    $('#cp-files').addEventListener('change', async (ev) => {
+      const files = [...ev.target.files];
+      ev.target.value = '';
+      for (const file of files) {
+        const total = attachments.reduce((s, a) => s + a.size, 0);
+        if (file.size > 5 * 1048576) { toast(`${file.name} is over 5 MB.`, 'error'); continue; }
+        if (total + file.size > 20 * 1048576) { toast('Attachments on one email can total at most 20 MB.', 'error'); break; }
+        const entry = { filename: file.name, size: file.size, uploading: true };
+        attachments.push(entry);
+        renderAttachments();
+        try {
+          const res = await fetch('/api/admin/email-attachments', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': file.type || 'application/octet-stream', 'X-Filename': encodeURIComponent(file.name) }, body: file });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(res.status === 413 ? `${file.name} is over 5 MB.` : data.error || 'Upload failed.');
+          Object.assign(entry, { id: data.id, uploading: false });
+          dirty = true;
+        } catch (err) {
+          attachments.splice(attachments.indexOf(entry), 1);
+          toast(err.message, 'error');
+        }
+        renderAttachments();
+      }
+    });
+
+    // ---- open, save, send, close
+    function reset() {
+      tokens = []; attachments = []; draftId = null; inReplyTo = null; audience = null; dirty = false; confirmArmed = false;
+      form.reset();
+      bodyEl.innerHTML = '';
+      $('#cp-cc-row').hidden = true; $('#cp-bcc-row').hidden = true; $('#cp-seg').hidden = true;
+      syncSegValues();
+      alertIn(dlg, '');
+      renderAttachments();
+    }
+    async function open(opts) {
+      await loadTemplates();
+      reset();
+      tokens = opts.to || [];
+      for (const s of opts.segments || []) tokens.push(s);
+      $('#cp-subject').value = opts.subject || '';
+      bodyEl.innerHTML = opts.html || '';
+      inReplyTo = opts.inReplyTo || null;
+      draftId = opts.draftId || null;
+      attachments = opts.attachments || [];
+      if (opts.cc?.length || opts.bcc?.length) { $('#cp-cc-row').hidden = false; $('#cp-bcc-row').hidden = false; $('#cp-cc').value = (opts.cc || []).join(', '); $('#cp-bcc').value = (opts.bcc || []).join(', '); }
+      if (opts.template) $('#cp-template').value = opts.template;
+      $('#cp-title').textContent = draftId ? 'Edit draft' : inReplyTo ? 'Reply' : 'New message';
+      renderTokens();
+      renderAttachments();
+      if (!dlg.open) dlg.showModal();
+      (tokens.length ? bodyEl : toInput).focus();
+    }
+    async function openDraft(id) {
+      try {
+        const d = await api('GET', `/api/admin/emails/${id}`);
+        const s = d.email.draft || {};
+        const lookups = (s.to || []).filter((t) => t.memberId);
+        const members = await Promise.all(lookups.map((t) => api('GET', `/api/admin/members/${t.memberId}`).then((r) => r.member).catch(() => null)));
+        const to = (s.to || []).map((t) => {
+          if (!t.memberId) return { type: 'address', address: t.address, name: t.name || '' };
+          const m = members.find((x) => x && x.id === Number(t.memberId));
+          return m ? { type: 'member', id: m.id, label: m.full_name, email: m.email } : null;
+        }).filter(Boolean);
+        const segLabel = (sg) => (sg.type === 'all' ? 'All members' : `${{ chapter: 'Chapter', status: 'Membership status', payment: 'Payment state' }[sg.type]}: ${(SEG_VALUES[sg.type].find(([v]) => v === sg.value) || [0, sg.value])[1]}`);
+        await open({
+          to, segments: (s.segments || []).map((sg) => ({ type: 'segment', segType: sg.type, value: sg.value, label: segLabel(sg) })),
+          cc: s.cc, bcc: s.bcc, subject: d.email.subject, html: d.email.body_html, template: s.template, inReplyTo: s.inReplyTo, draftId: id,
+          attachments: d.attachments.map((a) => ({ id: a.id, filename: a.filename, size: a.size })),
+        });
+      } catch (err) { toast(err.message, 'error'); }
+    }
+    const body = () => ({
+      ...payload(), subject: $('#cp-subject').value, html: bodyEl.innerHTML, template: $('#cp-template').value || null,
+      attachmentIds: attachments.filter((a) => a.id).map((a) => a.id), inReplyTo, draftId,
+    });
+    function afterChange() { if (currentTab === 'email') emailApp.reload().catch(() => {}); refreshBadges(); }
+    $('#cp-draft').addEventListener('click', async () => {
+      try {
+        const r = await api('POST', '/api/admin/emails', { ...body(), action: 'draft' });
+        draftId = r.id;
+        dirty = false;
+        toast('Draft saved.');
+        afterChange();
+      } catch (err) { alertIn(dlg, err.message); }
+    });
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      if (attachments.some((a) => a.uploading)) { alertIn(dlg, 'Wait for the attachments to finish uploading.'); return; }
+      await computeAudience(true);
+      if (audience?.errors?.length) { confirmArmed = false; setSendLabel(); alertIn(dlg, audience.errors[0]); return; }
+      if (audience?.category === 'bulk' && !confirmArmed) {
+        // Bulk sends need a second, deliberate click.
+        confirmArmed = true;
+        setSendLabel();
+        alertIn(dlg, `This will email ${audience.recipients} members${audience.excludedTotal ? ` (${audience.excludedTotal} excluded)` : ''}. Press the button again to confirm.`, true);
+        return;
+      }
+      const btn = $('#cp-send');
+      btn.disabled = true;
+      try {
+        const r = await api('POST', '/api/admin/emails', { ...body(), action: 'send' });
+        dirty = false;
+        dlg.close();
+        toast(r.category === 'bulk' ? `Queued for ${r.recipients} members. It sends at the configured rate.` : mailStatus?.transport === 'log' ? 'Saved to Sent (log mode: not delivered).' : 'Sent.');
+        afterChange();
+      } catch (err) {
+        confirmArmed = false;
+        setSendLabel();
+        alertIn(dlg, err.message);
+      } finally { btn.disabled = false; }
+    });
+    const tryClose = () => { if (dirty && !confirm('Discard this message? Unsaved changes will be lost.')) return; dirty = false; dlg.close(); };
+    $('#cp-close').addEventListener('click', tryClose);
+    $('#cp-discard').addEventListener('click', tryClose);
+    dlg.addEventListener('cancel', (ev) => { if (dirty) { ev.preventDefault(); tryClose(); } });
+
+    return { open, openDraft };
+  })();
+
   // ------------------------------------------------------------ table instances
 
   const tables = {
+    email: emailApp,
     members: createTable({
       name: 'members', prefix: 'm', endpoint: '/api/admin/members', listKey: 'members', noun: 'member',
       body: $('#members-body'), countId: 'members-count', pagerId: 'members-pager', render: memberRow,

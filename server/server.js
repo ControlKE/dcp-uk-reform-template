@@ -5,10 +5,19 @@ const crypto = require('node:crypto');
 const express = require('express');
 
 const db = require('./lib/db'); // loads server/.env
+const migrations = require('./lib/migrations');
 const auth = require('./lib/auth');
 const settings = require('./lib/settings');
 const { validateMember, validateDonation } = require('./lib/validate');
 const { pageParams, paged, dateRange } = require('./lib/paging');
+const mailer = require('./lib/mailer');
+const email = require('./lib/email');
+const templates = require('./lib/email-templates');
+
+// Feature flags: switched off until the feature is built and configured.
+const FEATURES = {
+  inboundEmail: process.env.FEATURE_INBOUND_EMAIL === 'true',
+};
 
 const PORT = Number(process.env.PORT) || 3000;
 const IN_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -35,7 +44,9 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: '20kb' }));
+const smallJson = express.json({ limit: '20kb' });
+const composeJson = express.json({ limit: '400kb' });
+app.use((req, res, next) => (req.path.startsWith('/api/admin/emails') ? composeJson : smallJson)(req, res, next));
 
 // Reject cross-site writes: browsers send Origin on POST/PUT/PATCH/DELETE, and it must
 // match this server. Admin cookies are also SameSite=Strict as a second layer.
@@ -122,6 +133,16 @@ app.post('/api/members', submissionLimit, async (req, res) => {
     m.idDocumentType, m.idDocumentNumber, m.language, orNull(m.occupation), orNull(m.interest), orNull(m.interestOther),
     orNull(m.chapter), orNull(m.chapterOther),
     m.addressLine1, orNull(m.addressLine2), m.town, orNull(m.county), m.postcode, feeAccount.feeAmount, feeAccount.feeCurrency]);
+  const created = await db.one('SELECT id FROM members WHERE reference = ?', [reference]);
+  // The form requires the data-consent declaration (validateMember).
+  await db.query('UPDATE members SET data_consent_at = UTC_TIMESTAMP() WHERE id = ?', [created.id]);
+  await email.receive({
+    source: 'application', fromName: m.fullName, fromEmail: m.email, memberId: created.id, labels: ['Membership'],
+    subject: `New membership application: ${m.fullName}`,
+    text: [`${m.fullName} applied to join DCP UK.`, '', `Reference: ${reference}`, `Email: ${m.email}`, `Phone: ${m.phone}`,
+      `Chapter: ${m.chapter || 'not chosen'}${m.chapterOther ? ` (${m.chapterOther})` : ''}`, `Town: ${m.town}`, '',
+      'Review it under Members. Replying to this message emails the applicant.'].join('\n'),
+  }).catch((err) => console.error('Could not add the application to the inbox:', err.message));
 
   res.status(201).json({ reference, accessToken, feeAccount });
 });
@@ -153,6 +174,57 @@ app.post('/api/donations', submissionLimit, async (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
   [reference, d.fullName, d.email, d.amountGbp, d.frequency, orNull(d.message)]);
   res.status(201).json({ reference, amountGbp: d.amountGbp, frequency: d.frequency, donationAccount });
+});
+
+// Contact form. Rate limited per IP, with a honeypot field and a minimum fill
+// time; suspected bots get a normal-looking success so they learn nothing.
+// The subjects offered on contact.html, and the inbox labels each one gets.
+const CONTACT_TOPICS = {
+  'General enquiry': [], Membership: ['Membership'], 'Find or start a UK chapter': ['Chapters'], Events: ['Chapters'],
+  'Diaspora policy': [], 'Volunteering or a chapter role': ['Chapters'], 'Media enquiry': [], 'Data protection request': [],
+  'Complaint or feedback': [], 'Website support': [],
+};
+const contactHits = new Map();
+function contactLimit(req, res, next) {
+  const now = Date.now();
+  const recent = (contactHits.get(req.ip) || []).filter((t) => now - t < 60 * 60 * 1000);
+  if (recent.length >= 5) return res.status(429).json({ error: 'You have sent several messages in the last hour. Please try again later, or email the chapter directly.' });
+  recent.push(now);
+  contactHits.set(req.ip, recent);
+  next();
+}
+app.post('/api/contact', contactLimit, async (req, res) => {
+  const b = req.body || {};
+  const startedAt = Number(b.startedAt) || 0;
+  if (String(b.website || '').trim() || !startedAt || Date.now() - startedAt < 3000) return res.json({ ok: true });
+  const fields = {};
+  const name = String(b.name || '').trim();
+  const from = String(b.email || '').trim().toLowerCase();
+  const topic = String(b.topic || '').trim();
+  const message = String(b.message || '').trim();
+  const phone = String(b.phone || '').trim().slice(0, 30);
+  const region = String(b.region || '').trim().slice(0, 60);
+  if (name.length < 2 || name.length > 120) fields.name = 'Enter your name.';
+  if (!email.EMAIL_RE.test(from) || from.length > 200) fields.email = 'Enter a valid email address so we can reply.';
+  if (!Object.hasOwn(CONTACT_TOPICS, topic)) fields.topic = 'Choose a subject.';
+  if (b.consent !== true) fields.consent = 'Tick the box so we can use your details to reply.';
+  if (message.length < 10) fields.message = 'Write a message of at least 10 characters.';
+  if (message.length > 5000) fields.message = 'Keep your message under 5,000 characters.';
+  if (Object.keys(fields).length) return res.status(400).json({ error: 'Please correct the highlighted fields.', fields });
+  const member = await db.one('SELECT id FROM members WHERE email = ? LIMIT 1', [from]);
+  await email.receive({
+    source: 'contact', fromName: name, fromEmail: from, memberId: member?.id || null,
+    labels: ['Contact', ...CONTACT_TOPICS[topic]],
+    subject: `[${topic}] Message from ${name}`,
+    text: [message, '', '--', `From: ${name} <${from}>`, phone && `Phone: ${phone}`, region && `Area: ${region}`, 'Sent from the website contact form. Replying emails the sender.'].filter(Boolean).join('\n'),
+  });
+  res.status(201).json({ ok: true });
+});
+
+// Member replies by email arrive later, behind FEATURE_INBOUND_EMAIL.
+app.post('/api/inbound-email', (req, res) => {
+  if (!FEATURES.inboundEmail) return res.status(404).json({ error: 'Not found.' });
+  res.status(501).json({ error: 'Inbound email is not implemented yet.' });
 });
 
 // ---------------------------------------------------------------- admin auth
@@ -240,6 +312,174 @@ function saveAccount(key, validator) {
 adminApi.put('/settings/fee-account', saveAccount('feeAccount', settings.validateFeeAccount));
 adminApi.put('/settings/donation-account', saveAccount('donationAccount', settings.validateDonationAccount));
 
+// ---------------------------------------------------------------- admin: email app
+
+adminApi.get('/mail-status', (req, res) => {
+  const c = mailer.config();
+  res.json({ transport: c.transport, production: IN_PRODUCTION, from: c.from, replyTo: c.replyTo, ratePerMinute: c.ratePerMinute, dailyLimit: c.dailyLimit, problems: mailer.problems(), inbound: FEATURES.inboundEmail });
+});
+
+adminApi.get('/email-templates', (req, res) => res.json({ templates: templates.TEMPLATES }));
+adminApi.get('/email-labels', async (req, res) => res.json({ labels: await db.query('SELECT id, name, color FROM email_labels ORDER BY id') }));
+
+// Member search for the compose "To" field, with what each person can receive.
+adminApi.get('/members/lookup', async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) return res.json({ members: [] });
+  const like = likeParam(q);
+  res.json({ members: await db.query(`SELECT id, full_name, email, chapter, data_consent_at IS NOT NULL AS consent, email_opt_out AS opted_out
+    FROM members WHERE full_name LIKE ? OR email LIKE ? OR reference LIKE ? ORDER BY full_name LIMIT 8`, [like, like, like]) });
+});
+
+const EMAIL_SORTS = { date: 'e.created_at', subject: 'e.subject', from: 'e.from_email' };
+adminApi.get('/emails', async (req, res) => {
+  const q = req.query;
+  const folder = q.folder === 'starred' || email.FOLDERS.includes(q.folder) ? q.folder : 'inbox';
+  const where = [];
+  const params = [];
+  if (folder === 'starred') where.push("e.is_starred = 1 AND e.folder <> 'trash'"); else { where.push('e.folder = ?'); params.push(folder); }
+  if (Number(q.label)) { where.push('EXISTS (SELECT 1 FROM email_label_map lm WHERE lm.email_id = e.id AND lm.label_id = ?)'); params.push(Number(q.label)); }
+  if (q.q) {
+    const like = likeParam(q.q);
+    where.push('(e.subject LIKE ? OR e.from_email LIKE ? OR e.from_name LIKE ? OR e.to_summary LIKE ? OR e.body_text LIKE ?)');
+    params.push(like, like, like, like, like);
+  }
+  if (q.unread === '1') where.push('e.is_read = 0');
+  const { rows, ...page } = await paged(db, {
+    select: `e.id, e.folder, e.direction, e.source, e.category, e.from_name, e.from_email, e.to_summary, e.subject,
+      LEFT(e.body_text, 160) AS snippet, e.is_read, e.is_starred, e.status, e.created_at, e.sent_at, e.recipient_count, e.excluded_count,
+      (SELECT GROUP_CONCAT(lm.label_id) FROM email_label_map lm WHERE lm.email_id = e.id) AS label_ids,
+      (SELECT COUNT(*) FROM email_attachments a WHERE a.email_id = e.id) AS attachments`,
+    from: 'emails e', where, params, p: pageParams(q, EMAIL_SORTS, 'date'), tiebreak: 'e.id DESC',
+  });
+  const counts = await db.one(`SELECT
+    SUM(folder = 'inbox' AND is_read = 0) AS inbox, SUM(folder = 'draft') AS draft, SUM(folder = 'spam' AND is_read = 0) AS spam,
+    SUM(is_starred = 1 AND folder <> 'trash') AS starred, SUM(folder = 'sent' AND status IN ('queued', 'failed', 'partial')) AS sent_attention
+    FROM emails`);
+  const labelCounts = await db.query(`SELECT lm.label_id AS id, COUNT(*) AS n FROM email_label_map lm JOIN emails e ON e.id = lm.email_id
+    WHERE e.folder <> 'trash' AND e.is_read = 0 GROUP BY lm.label_id`);
+  res.json({
+    emails: rows.map((r) => ({ ...r, label_ids: r.label_ids ? r.label_ids.split(',').map(Number) : [], attachments: Number(r.attachments) })),
+    ...page, folder,
+    counts: Object.fromEntries(Object.entries(counts).map(([k, v]) => [k, Number(v) || 0])),
+    labelCounts: Object.fromEntries(labelCounts.map((l) => [l.id, Number(l.n)])),
+  });
+});
+
+adminApi.get('/emails/:id', async (req, res) => {
+  const id = Number(req.params.id) || 0;
+  const row = await db.one('SELECT * FROM emails WHERE id = ?', [id]);
+  if (!row) return res.status(404).json({ error: 'Email not found.' });
+  if (!row.is_read) await db.query('UPDATE emails SET is_read = 1 WHERE id = ?', [id]);
+  res.json({
+    email: { ...row, is_read: 1, draft: row.draft_json ? JSON.parse(row.draft_json) : null, draft_json: undefined },
+    recipients: await db.query('SELECT id, kind, address, name, member_id, status, attempts, last_error, provider, sent_at FROM email_recipients WHERE email_id = ? ORDER BY kind DESC, id LIMIT 500', [id]),
+    recipientTotals: Object.fromEntries((await db.query('SELECT status, COUNT(*) AS n FROM email_recipients WHERE email_id = ? GROUP BY status', [id])).map((r) => [r.status, Number(r.n)])),
+    attachments: await db.query('SELECT id, filename, content_type, size FROM email_attachments WHERE email_id = ? ORDER BY id', [id]),
+    labels: (await db.query('SELECT label_id FROM email_label_map WHERE email_id = ?', [id])).map((l) => l.label_id),
+  });
+});
+
+// Bulk actions on selected emails: read, unread, star, unstar, move, restore, label, unlabel, delete.
+adminApi.post('/emails/bulk', async (req, res) => {
+  const { action, value } = req.body || {};
+  const ids = [...new Set((req.body?.ids || []).map(Number).filter(Boolean))].slice(0, 500);
+  if (!ids.length) return res.status(400).json({ error: 'Select at least one email.' });
+  const inList = `id IN (${ids.map(() => '?').join(',')})`;
+  let result;
+  switch (action) {
+    case 'read': case 'unread': result = await db.query(`UPDATE emails SET is_read = ? WHERE ${inList}`, [action === 'read' ? 1 : 0, ...ids]); break;
+    case 'star': case 'unstar': result = await db.query(`UPDATE emails SET is_starred = ? WHERE ${inList}`, [action === 'star' ? 1 : 0, ...ids]); break;
+    case 'move':
+      if (value === 'trash') result = await db.query(`UPDATE emails SET restore_folder = folder, folder = 'trash' WHERE folder <> 'trash' AND ${inList}`, ids);
+      else if (value === 'inbox' || value === 'spam') result = await db.query(`UPDATE emails SET folder = ? WHERE direction = 'in' AND ${inList}`, [value, ...ids]);
+      else return res.status(400).json({ error: 'Emails can be moved to Inbox, Spam or Trash.' });
+      break;
+    case 'restore': result = await db.query(`UPDATE emails SET folder = COALESCE(restore_folder, IF(direction = 'in', 'inbox', 'sent')), restore_folder = NULL WHERE folder = 'trash' AND ${inList}`, ids); break;
+    case 'label': case 'unlabel': {
+      const label = await db.one('SELECT id FROM email_labels WHERE id = ?', [Number(value) || 0]);
+      if (!label) return res.status(400).json({ error: 'Unknown label.' });
+      for (const id of ids) {
+        result = await db.query(action === 'label' ? 'INSERT IGNORE INTO email_label_map (email_id, label_id) VALUES (?, ?)' : 'DELETE FROM email_label_map WHERE email_id = ? AND label_id = ?', [id, label.id]);
+      }
+      break;
+    }
+    case 'delete':
+      // From Trash (or a draft) it is deleted for good; anywhere else it goes to Trash.
+      await db.query(`DELETE FROM emails WHERE (folder = 'trash' OR folder = 'draft') AND ${inList}`, ids);
+      result = await db.query(`UPDATE emails SET restore_folder = folder, folder = 'trash' WHERE folder <> 'trash' AND ${inList}`, ids);
+      break;
+    default: return res.status(400).json({ error: 'Unknown action.' });
+  }
+  res.json({ ok: true, changed: result?.affectedRows ?? 0 });
+});
+
+// What the "To" summary shows before sending.
+adminApi.post('/emails/audience', async (req, res) => {
+  const a = await email.resolveAudience(req.body || {});
+  res.json({
+    category: a.category, recipients: a.recipients.filter((r) => r.kind === 'to').length, excluded: a.excluded, excludedTotal: a.excludedTotal,
+    duplicate: a.duplicate, summary: a.summary, errors: a.errors, bulkBlocked: a.category === 'bulk' && !mailer.unsubscribeUrl(1, 'x@example.org'),
+  });
+});
+
+adminApi.post('/emails', async (req, res) => {
+  const b = req.body || {};
+  const draftId = Number(b.draftId) || null;
+  if (draftId && !(await db.one("SELECT id FROM emails WHERE id = ? AND folder = 'draft'", [draftId]))) return res.status(404).json({ error: 'Draft not found.' });
+  const input = { to: Array.isArray(b.to) ? b.to.slice(0, 500) : [], segments: Array.isArray(b.segments) ? b.segments.slice(0, 20) : [], cc: Array.isArray(b.cc) ? b.cc.slice(0, 20) : [], bcc: Array.isArray(b.bcc) ? b.bcc.slice(0, 20) : [] };
+  const template = templates.byKey(b.template);
+  if (template?.systemOnly) return res.status(400).json({ error: 'That template is sent automatically and cannot be used here.' });
+  const audience = await email.resolveAudience(input);
+  if (template?.bulkOnly && audience.category !== 'bulk') return res.status(400).json({ error: `The "${template.name}" template is for bulk emails to members.` });
+  const attachmentIds = Array.isArray(b.attachmentIds) ? b.attachmentIds : [];
+
+  if (b.action === 'draft') {
+    const draft = JSON.stringify({ ...input, attachmentIds, template: template?.key || null, inReplyTo: Number(b.inReplyTo) || null });
+    const values = [audience.summary || '(no recipients yet)', String(b.subject || '').slice(0, 250), email.cleanHtml(b.html), draft, req.admin.username];
+    let id = draftId;
+    if (id) await db.query("UPDATE emails SET to_summary = ?, subject = ?, body_html = ?, draft_json = ?, created_by = ?, updated_at = UTC_TIMESTAMP() WHERE id = ?", [...values, id]);
+    else id = (await db.query(`INSERT INTO emails (folder, direction, source, category, status, is_read, to_summary, subject, body_html, draft_json, created_by, created_at, updated_at)
+      VALUES ('draft', 'out', 'compose', 'transactional', 'draft', 1, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`, values)).insertId;
+    const ids = attachmentIds.map(Number).filter(Boolean);
+    if (ids.length) await db.query(`UPDATE email_attachments SET email_id = ? WHERE email_id IS NULL AND id IN (${ids.map(() => '?').join(',')})`, [id, ...ids]);
+    return res.json({ ok: true, id, draft: true });
+  }
+  try {
+    const id = await email.createOutgoing({
+      admin: req.admin.username, audience, subject: b.subject, html: b.html, template: template?.key,
+      attachmentIds, inReplyTo: Number(b.inReplyTo) || null, source: b.inReplyTo ? 'reply' : 'compose', draftId,
+    });
+    res.status(201).json({ ok: true, id, category: audience.category, recipients: audience.recipients.filter((r) => r.kind === 'to').length, excluded: audience.excludedTotal });
+  } catch (err) {
+    if (err instanceof email.EmailError) return res.status(400).json({ error: err.message });
+    throw err;
+  }
+});
+
+// Attachments are uploaded one at a time as raw bytes, before the email is sent.
+adminApi.post('/email-attachments', express.raw({ type: () => true, limit: email.MAX_ATTACHMENT }), async (req, res) => {
+  let name = '';
+  try { name = decodeURIComponent(String(req.get('x-filename') || '')); } catch { /* malformed name */ }
+  name = name.replace(/[\\/\r\n"]/g, '_').trim().slice(0, 200);
+  const type = /^[\w.+-]+\/[\w.+-]+$/.test(req.get('content-type') || '') ? req.get('content-type') : 'application/octet-stream';
+  if (!name) return res.status(400).json({ error: 'The file needs a name.' });
+  if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: 'The file is empty.' });
+  const r = await db.query('INSERT INTO email_attachments (filename, content_type, size, data, uploaded_by) VALUES (?, ?, ?, ?, ?)', [name, type, req.body.length, req.body, req.admin.username]);
+  res.status(201).json({ id: r.insertId, filename: name, size: req.body.length, contentType: type });
+});
+adminApi.delete('/email-attachments/:id', async (req, res) => {
+  await db.query('DELETE FROM email_attachments WHERE id = ? AND (email_id IS NULL OR email_id IN (SELECT id FROM emails WHERE folder = \'draft\'))', [Number(req.params.id) || 0]);
+  res.json({ ok: true });
+});
+adminApi.get('/email-attachments/:id', async (req, res) => {
+  const a = await db.one('SELECT filename, content_type, data FROM email_attachments WHERE id = ?', [Number(req.params.id) || 0]);
+  if (!a) return res.status(404).json({ error: 'Attachment not found.' });
+  // Always a download, never rendered in the admin's origin.
+  res.set({ 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(a.filename)}`, 'Cache-Control': 'no-store' });
+  res.send(a.data);
+});
+
 // ---------------------------------------------------------------- admin: dashboard, search, notifications
 
 const isoDay = (d) => d.toISOString().slice(0, 10);
@@ -287,6 +527,8 @@ adminApi.get('/notifications', async (req, res) => {
     pending: await n("SELECT COUNT(*) AS n FROM members WHERE status = 'pending'"),
     paymentsToCheck: await n("SELECT COUNT(*) AS n FROM members WHERE payment_status = 'payment_reported'"),
     donationsPledged: await n("SELECT COUNT(*) AS n FROM donations WHERE status = 'pledged'"),
+    unreadMessages: await n("SELECT COUNT(*) AS n FROM emails WHERE folder = 'inbox' AND is_read = 0 AND source = 'contact'"),
+    failedEmails: await n("SELECT COUNT(*) AS n FROM emails WHERE folder = 'sent' AND status IN ('failed', 'partial')"),
     newRegistrations: await db.query(`SELECT id, reference, full_name, chapter, created_at FROM members
       WHERE status = 'pending' ORDER BY created_at DESC LIMIT 5`),
   });
@@ -343,6 +585,7 @@ adminApi.get('/stats', async (req, res) => {
     paymentsToCheck: await n("SELECT COUNT(*) AS n FROM members WHERE payment_status = 'payment_reported'"),
     donationsPledged: await n("SELECT COUNT(*) AS n FROM donations WHERE status = 'pledged'"),
     donationsReceivedGbp: await n("SELECT COALESCE(SUM(amount_gbp), 0) AS n FROM donations WHERE status = 'received'"),
+    emailsUnread: await n("SELECT COUNT(*) AS n FROM emails WHERE folder = 'inbox' AND is_read = 0"),
   });
 });
 
@@ -489,6 +732,42 @@ adminApi.patch('/donations/:id', async (req, res) => {
 app.use('/api/admin', adminApi);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));
 
+// ---------------------------------------------------------------- unsubscribe
+
+function unsubscribePage(title, body, form = '') {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>${title} · DCP UK</title></head>
+<body style="margin:0;font-family:system-ui,sans-serif;background:#f3f8f1;color:#14201a">
+<main style="max-width:480px;margin:10vh auto;padding:32px;background:#fff;border-radius:10px;box-shadow:0 4px 18px rgba(13,36,16,.1)">
+<p style="margin:0 0 16px;font-weight:800;font-size:20px">DCP <span style="color:#24592a">UK</span></p>
+<h1 style="font-size:22px;margin:0 0 12px">${title}</h1><p style="line-height:1.6;color:#4b5f52">${body}</p>${form}
+<p style="margin-top:24px"><a href="/" style="color:#24592a">Back to the website</a></p></main></body></html>`;
+}
+async function unsubscribeTarget(req) {
+  const id = Number(req.query.m || req.body?.m) || 0;
+  const token = String(req.query.t || req.body?.t || '');
+  const member = id ? await db.one('SELECT id, email, email_opt_out FROM members WHERE id = ?', [id]) : null;
+  return member && mailer.checkUnsubscribeToken(member.id, member.email, token) ? { member, token } : null;
+}
+// GET only shows a button, so link scanners that open URLs cannot unsubscribe people.
+app.get('/unsubscribe', async (req, res) => {
+  const t = await unsubscribeTarget(req);
+  res.set('Cache-Control', 'no-store');
+  if (!t) return res.status(400).send(unsubscribePage('Link not recognised', 'This unsubscribe link is incomplete or has expired. Contact the chapter and we will remove you by hand.'));
+  if (t.member.email_opt_out) return res.send(unsubscribePage('You are unsubscribed', 'You will not receive chapter news emails. You will still get messages about your own membership, such as receipts.'));
+  res.send(unsubscribePage('Unsubscribe from chapter emails?', 'You will stop receiving DCP UK news and notices. Messages about your own membership, such as receipts and login emails, will still be sent.',
+    `<form method="post" action="/unsubscribe"><input type="hidden" name="m" value="${t.member.id}"><input type="hidden" name="t" value="${t.token}">
+     <button type="submit" style="margin-top:8px;padding:12px 20px;border:0;border-radius:6px;background:#24592a;color:#fff;font-weight:600;font-size:15px;cursor:pointer">Unsubscribe</button></form>`));
+});
+// Handles both the button above and RFC 8058 one-click requests from mail apps.
+app.post('/unsubscribe', express.urlencoded({ extended: false, limit: '2kb' }), async (req, res) => {
+  const t = await unsubscribeTarget(req);
+  res.set('Cache-Control', 'no-store');
+  if (!t) return res.status(400).send(unsubscribePage('Link not recognised', 'This unsubscribe link is incomplete or has expired. Contact the chapter and we will remove you by hand.'));
+  await db.query('UPDATE members SET email_opt_out = 1, email_opt_out_at = COALESCE(email_opt_out_at, UTC_TIMESTAMP()) WHERE id = ?', [t.member.id]);
+  res.send(unsubscribePage('You are unsubscribed', 'You will not receive chapter news emails any more. You will still get messages about your own membership, such as receipts.'));
+});
+
 // ---------------------------------------------------------------- static files
 
 const VENDOR_FILES = {
@@ -504,6 +783,9 @@ app.get('/admin/vendor/:file', (req, res, next) => {
 app.use('/admin', (req, res, next) => { res.set({ 'X-Robots-Tag': 'noindex, nofollow', 'Cache-Control': 'no-store' }); next(); },
   express.static(ADMIN_DIR));
 app.use('/shared', express.static(SHARED_DIR));
+
+// Browsers ask for /favicon.ico on every page; answer with the DCP logo.
+app.get('/favicon.ico', (req, res) => res.type('image/png').sendFile(path.join(SITE_DIR, 'assets', 'img', 'dcp-logo.png')));
 
 // Friendly URLs for the header buttons; the .html files still work too.
 const PAGE_ROUTES = { '/donate': 'donate.html', '/join': 'membership.html', '/member-portal': 'member-portal.html' };
@@ -530,7 +812,17 @@ app.use((err, req, res, next) => {
     console.error(`(${err.code || err.message})`);
     process.exit(1);
   }
+  try {
+    await migrations.prepare();
+  } catch (err) {
+    console.error(err instanceof migrations.MigrationStop ? `
+NOT STARTING: ${err.message}
+` : err);
+    process.exit(1);
+  }
   const seeded = await auth.ensureConfiguredAdmin();
+  email.startQueue();
+  const mailProblems = mailer.problems();
   const weakAdmins = await auth.adminsWithExamplePassword();
   app.listen(PORT, HOST, () => {
     const base = `http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`;
@@ -544,5 +836,11 @@ app.use((err, req, res, next) => {
       console.warn(`WARNING: admin "${name}" still uses the example password from .env.example. Change it now: npm run admin:reset -- --email ${name}`);
     }
     if (IN_PRODUCTION && !db.config.password) console.warn('WARNING: the database user has no password. Set one before going live.');
+    const mc = mailer.config();
+    console.log(`Email:         ${mc.transport}${mc.transport === 'log' ? ' (stored only, nothing is delivered)' : ''}, from ${mc.from.email}`);
+    if (mailProblems.length) {
+      const bar = '!'.repeat(78);
+      console.warn(`\n${bar}\n EMAIL IS NOT PROPERLY CONFIGURED\n${mailProblems.map((p) => ` - ${p}`).join('\n')}\n${bar}\n`);
+    }
   });
 })();

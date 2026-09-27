@@ -538,3 +538,7 @@ ul { list-style: none; margin: 0; padding: 0; }
   .card-row, .card-row.cols-3 { grid-template-columns: 1fr; }
   .form-grid, .amount-grid { grid-template-columns: 1fr; }
 }
+
+/* Honeypot field on public forms: hidden from people and screen readers, still
+   in the DOM for bots that fill every input. */
+.hp-field { position: absolute !important; left: -10000px; width: 1px; height: 1px; overflow: hidden; }

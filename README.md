@@ -41,6 +41,20 @@ Never put real credentials in `server/.env.example` or any committed file. `.env
 
 In VS Code you can press **F5** instead and pick **DCP UK: site + backend**.
 
+## Database migrations
+
+Schema changes are numbered files in `server/migrations`. Locally they apply automatically when the server starts. `npm run migrate` shows what is pending without changing anything; `npm run migrate -- --yes` applies it. In production nothing is applied without that command (or `AUTO_MIGRATE=true`), so there is always a chance to back up first. See DEPLOY.md, "Database changes".
+
+`npm run seed:dev` fills a local database with fake members and pledges (`-- --reset` removes them). It refuses to run in production.
+
+## Email
+
+The admin's **Email** app shows contact-form messages and new membership applications in its Inbox. It sends replies, one-to-one messages and bulk emails to member segments. Locally `MAIL_TRANSPORT=log` keeps everything in **Sent** without delivering it. Choosing a provider, the domain's DNS records and the environment variables are covered in DEPLOY.md, "Email".
+
+## Pinned dependencies
+
+- **ApexCharts is pinned at 4.7.0 on purpose. Do not upgrade it.** 4.7.0 is the last MIT-licensed release. From 5.0 ApexCharts uses a dual licence: free only for organisations under $2M revenue, with restrictions on platforms used by other people. The dashboard charts need nothing from 5.x. An upgrade needs a licence decision first. The exact version (no `^`) is in `server/package.json`.
+
 ## What's in the bundle
 
 - **`dcp-preview/`**: a full 11-page DCP UK site (Home, About, Membership, Leadership, Priorities, Chapters, News, Events, Documents, Contact, Donate). It follows Reform UK's structure, uses DCP's own colours, and has real content from the live DCP UK site. Membership and Donate are live forms connected to the backend.

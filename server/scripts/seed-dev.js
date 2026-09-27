@@ -6,6 +6,7 @@
 // them. Refuses to run in production or against a non-local database.
 const crypto = require('node:crypto');
 const db = require('../lib/db');
+const migrations = require('../lib/migrations');
 const auth = require('../lib/auth');
 
 const SEED_DOMAIN = 'seed.example';
@@ -78,6 +79,7 @@ async function seed() {
 
 (async () => {
   await db.init();
+  await migrations.prepare();
   if (process.argv.includes('--reset')) await reset(); else await seed();
   process.exit(0);
 })().catch((err) => { console.error(err.message || err.code); process.exit(1); });

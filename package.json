@@ -8,7 +8,8 @@
     "start": "npm --prefix server start",
     "create-admin": "npm --prefix server run create-admin --",
     "admin:reset": "npm --prefix server run admin:reset --",
-    "seed:dev": "npm --prefix server run seed:dev --"
+    "seed:dev": "npm --prefix server run seed:dev --",
+    "migrate": "npm --prefix server run migrate --"
   },
   "engines": {
     "node": ">=22.13"
