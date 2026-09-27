@@ -83,8 +83,20 @@ async function seed() {
       weighted([['received', 55], ['pledged', 35], ['cancelled', 10]]), weighted([['yes', 80], ['no', 8], ['unknown', 12]]), sqlTime(created), sqlTime(created),
     ]);
   }
+  // Visit contributions from the Donate page: some from members (linked by their reference).
+  const visit = await db.one("SELECT amount FROM membership_tiers WHERE tkey = 'visit'");
+  const visitors = await db.query("SELECT id, reference, full_name, email FROM members WHERE email LIKE ? AND status = 'approved' ORDER BY RAND() LIMIT 8", [`%@${SEED_DOMAIN}`]);
+  for (const [i, m] of visitors.entries()) {
+    const created = recent(200);
+    const linked = i % 4 !== 3;
+    await db.query(`INSERT INTO donations (reference, kind, member_id, member_reference, full_name, email, amount_gbp, frequency, message, status, donor_kenyan, created_at, updated_at)
+      VALUES (?, 'visit_contribution', ?, ?, ?, ?, ?, 'one_off', NULL, ?, 'yes', ?, ?)`, [
+      ref('DON'), linked ? m.id : null, linked ? m.reference : null, m.full_name, m.email, visit ? visit.amount : 200,
+      weighted([['received', 50], ['pledged', 50]]), sqlTime(created), sqlTime(created),
+    ]);
+  }
   const n = await seedFinance();
-  console.log(`Added ${members} members, ${donations} donation pledges and ${n} transactions (emails @${SEED_DOMAIN}). Remove them with: npm run seed:dev -- --reset`);
+  console.log(`Added ${members} members, ${donations} donation pledges, ${visitors.length} visit contributions and ${n} transactions (emails @${SEED_DOMAIN}). Remove them with: npm run seed:dev -- --reset`);
 }
 
 // Payments for the seeded people, recorded and verified through the real finance
@@ -100,11 +112,14 @@ async function seedFinance() {
   let count = 0;
   const record = async (input, source) => { count++; return finance.recordTransaction(input, recorder, source ? { source } : undefined); };
 
-  // Tiers: mostly Ordinary, some Stakeholder and Visit contribution.
+  // Tiers: mostly Ordinary, some Stakeholder. Unpaid Stakeholder applications still
+  // pending review are awaiting tier approval.
   const seeded = await db.query('SELECT id, created_at, payment_status, status FROM members WHERE email LIKE ? ORDER BY id', [`%@${SEED_DOMAIN}`]);
   for (const m of seeded) {
-    const tier = weighted([['ordinary', 85], ['stakeholder', 9], ['visit', 6]]);
-    await db.query('UPDATE members SET tier_id = ?, billing_start = DATE(created_at), fee_review = 0, fee_review_reason = NULL WHERE id = ?', [tiers[tier].id, m.id]);
+    const tier = weighted([['ordinary', 88], ['stakeholder', 12]]);
+    m.awaiting = tier === 'stakeholder' && m.status === 'pending' && m.payment_status === 'pending_payment';
+    await db.query('UPDATE members SET tier_id = ?, tier_status = ?, billing_start = DATE(created_at), fee_review = 0, fee_review_reason = NULL WHERE id = ?',
+      [tiers[tier].id, m.awaiting ? 'awaiting' : 'confirmed', m.id]);
     m.tier = tiers[tier];
   }
   for (const m of seeded) {
@@ -126,11 +141,11 @@ async function seedFinance() {
   }
 
   // Donations: received pledges get their verified payment; declarations come from the pledge.
-  const pledges = await db.query("SELECT id, amount_gbp, created_at, donor_kenyan FROM donations WHERE email LIKE ? AND status = 'received'", [`%@${SEED_DOMAIN}`]);
+  const pledges = await db.query("SELECT id, kind, member_id, amount_gbp, created_at, donor_kenyan FROM donations WHERE email LIKE ? AND status = 'received'", [`%@${SEED_DOMAIN}`]);
   await db.query("UPDATE donations SET status = 'pledged' WHERE email LIKE ? AND status = 'received'", [`%@${SEED_DOMAIN}`]);
   for (const p of pledges) {
-    const id = await record({ type: 'donation', amount: p.amount_gbp, currency: 'GBP', fxRate: 1, method: 'bank_transfer', account: 'donations_account',
-      donationId: p.id, donorKenyan: p.donor_kenyan, dateReceived: dayAfter(p.created_at, crypto.randomInt(1, 10)), externalRef: `DON ${crypto.randomInt(10000, 99999)}` });
+    const id = await record({ type: p.kind, amount: p.amount_gbp, currency: 'GBP', fxRate: 1, method: 'bank_transfer', account: 'donations_account',
+      donationId: p.id, memberId: p.member_id, donorKenyan: p.donor_kenyan, dateReceived: dayAfter(p.created_at, crypto.randomInt(1, 10)), externalRef: `DON ${crypto.randomInt(10000, 99999)}` });
     await finance.verifyTransaction(id, verifier);
   }
 

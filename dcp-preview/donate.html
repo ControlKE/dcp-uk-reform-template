@@ -53,6 +53,12 @@
           <h3 style="margin-top:0;">Make a donation</h3>
           <p style="color:var(--text-on-light-muted);font-size:14px;margin-top:-8px;">This is separate from <a href="membership.html" style="color:var(--accent);font-weight:600;">membership fees</a>. Donations here support the UK chapter's own running costs &mdash; venue hire for town halls, travel for chapter volunteers, printing and outreach materials.</p>
 
+          <div class="field full tier-field" data-field="kind">
+            <p class="tier-choice-label" id="d-kind-label">What are you paying?</p>
+            <div class="tier-choices" role="radiogroup" aria-labelledby="d-kind-label" data-tiers="donate-types"><label class="tier-choice"><input type="radio" name="kind" value="donation" checked><span class="tier-choice-body"><span class="tier-choice-head"><strong>Donation</strong><span class="tier-price">Any amount, one-off or monthly</span></span></span></label><label class="tier-choice"><input type="radio" name="kind" value="visit_contribution"><span class="tier-choice-body"><span class="tier-choice-head"><strong>Visit contribution</strong><span class="tier-price" data-visit-amount="200">&pound;200, one-off</span></span></span></label></div>
+          </div>
+
+          <div data-when-kind="donation">
           <div class="toggle-row" role="group" aria-label="Donation frequency">
             <button type="button" class="selected" data-frequency="one_off" aria-pressed="true">One-off</button>
             <button type="button" data-frequency="monthly" aria-pressed="false">Monthly</button>
@@ -65,6 +71,11 @@
             <button type="button" class="amount-btn" data-amount="100" aria-pressed="false">&pound;100</button>
           </div>
           <div class="field full" style="margin-bottom:20px;"><label for="d-custom">Or enter a different amount (GBP)</label><input id="d-custom" name="amountGbp" type="number" min="1" max="10000" step="0.01" placeholder="e.g. 35"></div>
+          </div>
+
+          <div data-when-kind="visit_contribution" hidden>
+            <div class="field full" style="margin-bottom:20px;"><label for="d-memberRef">Membership reference (optional)<span class="hint">If you are a member, e.g. DCPUK-AB12CD. With the same email as your membership, it links this contribution to you.</span></label><input id="d-memberRef" name="memberReference" type="text" maxlength="20" autocomplete="off" style="text-transform:uppercase;"></div>
+          </div>
 
           <div class="form-grid">
             <div class="field"><label for="d-name">Full name *</label><input id="d-name" name="fullName" type="text" autocomplete="name" required></div>
@@ -77,7 +88,7 @@
               <label style="display:inline-flex;gap:6px;margin-right:18px;font-size:14px;"><input type="radio" name="donorKenyan" value="no" style="width:auto;">No</label>
               <label style="display:inline-flex;gap:6px;font-size:14px;"><input type="radio" name="donorKenyan" value="unknown" style="width:auto;">Prefer not to say</label>
             </fieldset>
-            <label class="field full checkbox-field" data-field="acknowledged"><input type="checkbox" name="acknowledged" style="width:auto;margin-top:3px;"><span>I understand this donation supports DCP UK's own chapter activities, and is separate from party membership.</span></label>
+            <label class="field full checkbox-field" data-field="acknowledged"><input type="checkbox" name="acknowledged" style="width:auto;margin-top:3px;"><span data-when-kind="donation">I understand this donation supports DCP UK's own chapter activities, and is separate from party membership.</span><span data-when-kind="visit_contribution" hidden>I understand this contribution is paid to DCP UK's chapter account, and is separate from membership fees.</span></label>
           </div>
 
           <div class="form-actions">

@@ -77,6 +77,7 @@
     const declarations = {};
     form.querySelectorAll('[data-field="declarations"] input[type="checkbox"]').forEach((c) => { declarations[c.name] = c.checked; });
     return {
+      tier: data.tier || 'ordinary',
       fullName: data.fullName, phone: data.phone, email: data.email, dateOfBirth: data.dateOfBirth,
       idDocumentType: data.idDocumentType, idDocumentNumber: data.idDocumentNumber, language: data.language,
       occupation: data.occupation,
@@ -88,9 +89,10 @@
     };
   }
 
-  function renderFee(fee, reference) {
+  function renderFee(fee, reference, awaiting) {
     const dl = document.getElementById('fee-details');
     dl.replaceChildren();
+    addRow(dl, 'Membership tier', fee.feeTier ? `${fee.feeTier}${awaiting ? ' (to be confirmed by the chapter)' : ''}` : '');
     // The GBP amount is what is owed; the KES figure is only a guide for M-Pesa payers.
     const kes = fee.feeKes ? ` (about KES ${Number(fee.feeKes).toLocaleString('en-GB')})` : '';
     const amount = `${formatMoney(fee.feeAmount, fee.feeCurrency || 'GBP')}${fee.feeRenewal === 'one_off' ? '' : ' for the first year'}${kes}`;
@@ -122,12 +124,11 @@
       addRow(dl, 'Payment reference', reference, 'ref');
     }
     const extra = document.getElementById('fee-instructions');
-    extra.textContent = fee.instructions || '';
-    extra.hidden = !fee.instructions;
-    if (fee.method === 'mpesa_till' && fee.configured) {
-      extra.hidden = false;
-      extra.textContent = [fee.instructions, 'Till payments cannot carry a reference, so please enter your M-Pesa confirmation code below.'].filter(Boolean).join(' ');
-    }
+    const notes = [fee.instructions];
+    if (fee.method === 'mpesa_till' && fee.configured) notes.push('Till payments cannot carry a reference, so please enter your M-Pesa confirmation code below.');
+    if (awaiting) notes.push(`The chapter confirms ${fee.feeTier} before the fee is due. You can pay now, or wait until they confirm it.`);
+    extra.textContent = notes.filter(Boolean).join(' ');
+    extra.hidden = !extra.textContent;
   }
 
   function confirm(paidNow) {
@@ -159,7 +160,7 @@
         const result = await request('POST', '/api/members', collect());
         registration = result;
         save(registration);
-        renderFee(result.feeAccount, result.reference);
+        renderFee(result.feeAccount, result.reference, result.tierAwaiting);
         show(4);
       } else if (step === 4) {
         await request('POST', `/api/members/${encodeURIComponent(registration.reference)}/payment-reported`, {
@@ -183,7 +184,7 @@
   const saved = load();
   if (saved && saved.reference && saved.accessToken) {
     registration = saved;
-    renderFee(saved.feeAccount, saved.reference);
+    renderFee(saved.feeAccount, saved.reference, saved.tierAwaiting);
     show(4);
   }
 })();

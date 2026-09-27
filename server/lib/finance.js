@@ -9,8 +9,9 @@ const mailer = require('./mailer');
 const TYPES = {
   membership_fee: { label: 'Membership fee', fee: true },
   stakeholder_membership: { label: 'Stakeholder membership', fee: true },
-  visit_contribution: { label: 'Visit contribution', fee: true },
-  donation: { label: 'Donation' },
+  // Paid through the Donate page like a donation, optionally linked to a member.
+  visit_contribution: { label: 'Visit contribution', pledge: true },
+  donation: { label: 'Donation', pledge: true },
   other_income: { label: 'Other income' },
   refund: { label: 'Refund', out: true },
   expense: { label: 'Expense', out: true },
@@ -53,18 +54,24 @@ async function saveFinanceSettings(input, who) {
   });
 }
 
-const listTiers = (q = db) => q.query('SELECT id, tkey, name, amount, currency, display_kes, renewal, tx_type, active, sort, updated_at, updated_by FROM membership_tiers ORDER BY sort, id');
+// kind: 'membership' tiers are chosen when joining; 'payment' rows (the visit
+// contribution) are payment types on the Donate page that keep their amount here.
+const listTiers = (q = db) => q.query('SELECT id, tkey, kind, name, description, amount, currency, display_kes, renewal, tx_type, active, sort, updated_at, updated_by FROM membership_tiers ORDER BY sort, id');
+
+// Joining on any tier except Ordinary waits for an admin to confirm it.
+const tierNeedsApproval = (tkey) => tkey !== 'ordinary';
 
 // What the public pages show: active tiers, in order. displayKes is approximate
 // and for display only; dues are always the GBP amount.
 async function publicTiers(q = db) {
-  const rows = await q.query('SELECT tkey, name, amount, display_kes, renewal FROM membership_tiers WHERE active = 1 ORDER BY sort, id');
-  return rows.map((t) => ({ key: t.tkey, name: t.name, amount: Number(t.amount), renewal: t.renewal, displayKes: t.display_kes === null ? null : Number(t.display_kes) }));
+  const rows = await q.query('SELECT tkey, kind, name, description, amount, display_kes, renewal FROM membership_tiers WHERE active = 1 ORDER BY sort, id');
+  return rows.map((t) => ({ key: t.tkey, kind: t.kind, name: t.name, description: t.description || '', amount: Number(t.amount), renewal: t.renewal,
+    displayKes: t.display_kes === null ? null : Number(t.display_kes), needsApproval: t.kind === 'membership' && tierNeedsApproval(t.tkey) }));
 }
 
 const gbpText = (n) => `£${Number(n).toLocaleString('en-GB', { minimumFractionDigits: Number.isInteger(Number(n)) ? 0 : 2, maximumFractionDigits: 2 })}`;
-// "Ordinary membership: £20 a year, renewed annually. Stakeholder membership: £500 a year.
-// Visit contribution: £200, one-off." Only the first yearly tier says "renewed annually".
+// "Ordinary membership: £20 a year, renewed annually. Stakeholder membership: £500 a year."
+// Only the first yearly tier says "renewed annually".
 function tierSentence(tiers) {
   let saidRenewal = false;
   return tiers.map((t) => {
@@ -81,15 +88,16 @@ async function updateTier(id, input, who) {
   const renewal = input.renewal;
   const kesInput = input.displayKes === undefined || input.displayKes === null ? '' : String(input.displayKes).trim();
   const displayKes = kesInput === '' ? null : Math.round(Number(kesInput));
+  const description = String(input.description ?? '').trim().slice(0, 300) || null;
   if (name.length < 2) throw new FinanceError('Give the tier a name.');
   if (!(amount > 0) || amount > 100000) throw new FinanceError('Enter an amount between £0.01 and £100,000.');
   if (!['yearly', 'one_off'].includes(renewal)) throw new FinanceError('Renewal must be yearly or one-off.');
   if (displayKes !== null && !(displayKes >= 1 && displayKes <= 100000000)) throw new FinanceError('The approximate KES amount must be a whole number, or left blank.');
   return db.transaction(async (q) => {
-    const before = await q.one('SELECT name, amount, display_kes, renewal, active FROM membership_tiers WHERE id = ? FOR UPDATE', [Number(id) || 0]);
+    const before = await q.one('SELECT name, description, amount, display_kes, renewal, active FROM membership_tiers WHERE id = ? FOR UPDATE', [Number(id) || 0]);
     if (!before) throw new FinanceError('Tier not found.', 404);
-    const after = { name, amount, display_kes: displayKes, renewal, active: input.active === false ? 0 : 1 };
-    await q.query('UPDATE membership_tiers SET name = ?, amount = ?, display_kes = ?, renewal = ?, active = ?, updated_at = UTC_TIMESTAMP(), updated_by = ? WHERE id = ?', [name, amount, displayKes, renewal, after.active, who.actor, id]);
+    const after = { name, description, amount, display_kes: displayKes, renewal, active: input.active === false ? 0 : 1 };
+    await q.query('UPDATE membership_tiers SET name = ?, description = ?, amount = ?, display_kes = ?, renewal = ?, active = ?, updated_at = UTC_TIMESTAMP(), updated_by = ? WHERE id = ?', [name, description, amount, displayKes, renewal, after.active, who.actor, id]);
     const d = audit.diff(before, after);
     await audit.record(q, { ...who, action: 'tier.updated', entity: 'tier', entityId: id, summary: `Tier "${name}" updated`, ...d });
   });
@@ -99,16 +107,19 @@ async function updateTier(id, input, who) {
 
 // Dues and payments for members, in SQL so lists, reports and the member view agree.
 // Yearly tiers bill one period per year from billing_start (the first period
-// immediately); one-off tiers bill once. Payments are verified fee transactions,
-// less refunds linked to the member.
+// immediately); one-off tiers bill once; nothing is due while the tier awaits an
+// admin's confirmation. Payments are verified membership-fee transactions (plus the
+// member's own tier type, for anyone left on the old visit tier), less refunds.
+const PERIODS_EXPR = `(CASE WHEN t.id IS NULL OR m.tier_status = 'awaiting' THEN 0
+  WHEN t.renewal = 'yearly' THEN TIMESTAMPDIFF(YEAR, COALESCE(m.billing_start, DATE(m.created_at)), UTC_DATE()) + 1 ELSE 1 END)`;
+const MEMBER_PAYMENT = `(x.type IN (${q2([...FEE_TYPES, 'refund'])}) OR x.type = t.tx_type)`;
+const PAID_EXPR = `COALESCE((SELECT SUM(${SIGNED_GBP}) FROM transactions x WHERE x.member_id = m.id AND x.status IN ${COUNTED} AND ${MEMBER_PAYMENT}), 0)`;
 const MEMBER_BALANCE_SELECT = `
-  t.id AS tier_id, t.name AS tier_name, t.amount AS tier_amount, t.renewal AS tier_renewal, t.tx_type AS tier_tx_type,
-  (CASE WHEN t.id IS NULL THEN 0 WHEN t.renewal = 'yearly' THEN TIMESTAMPDIFF(YEAR, COALESCE(m.billing_start, DATE(m.created_at)), UTC_DATE()) + 1 ELSE 1 END) AS periods,
-  COALESCE((SELECT SUM(${SIGNED_GBP}) FROM transactions x WHERE x.member_id = m.id AND x.status IN ${COUNTED}
-    AND x.type IN (${q2([...FEE_TYPES, 'refund'])})), 0) AS paid_gbp,
-  COALESCE((SELECT SUM(x.amount_gbp) FROM transactions x WHERE x.member_id = m.id AND x.status = 'pending'), 0) AS pending_gbp`;
-const BALANCE_EXPR = `((CASE WHEN t.id IS NULL THEN 0 WHEN t.renewal = 'yearly' THEN TIMESTAMPDIFF(YEAR, COALESCE(m.billing_start, DATE(m.created_at)), UTC_DATE()) + 1 ELSE 1 END) * COALESCE(t.amount, 0)
-  - COALESCE((SELECT SUM(${SIGNED_GBP}) FROM transactions x WHERE x.member_id = m.id AND x.status IN ${COUNTED} AND x.type IN (${q2([...FEE_TYPES, 'refund'])})), 0))`;
+  t.id AS tier_id, t.name AS tier_name, t.amount AS tier_amount, t.renewal AS tier_renewal, t.tx_type AS tier_tx_type, m.tier_status,
+  ${PERIODS_EXPR} AS periods,
+  ${PAID_EXPR} AS paid_gbp,
+  COALESCE((SELECT SUM(x.amount_gbp) FROM transactions x WHERE x.member_id = m.id AND x.status = 'pending' AND ${MEMBER_PAYMENT}), 0) AS pending_gbp`;
+const BALANCE_EXPR = `(${PERIODS_EXPR} * COALESCE(t.amount, 0) - ${PAID_EXPR})`;
 
 const addYears = (isoDate, n) => {
   const d = new Date(`${isoDate}T00:00:00Z`);
@@ -127,15 +138,16 @@ async function memberFinance(memberId, q = db) {
   const paid = round2(row.paid_gbp);
   const balance = round2(due - paid);
   const yearly = row.tier_renewal === 'yearly';
+  const awaiting = row.tier_status === 'awaiting';
   const periodStart = yearly ? addYears(row.billing_start, Number(row.periods) - 1) : row.billing_start;
   return {
-    tier: row.tier_id ? { id: row.tier_id, name: row.tier_name, amount, renewal: row.tier_renewal, txType: row.tier_tx_type } : null,
+    tier: row.tier_id ? { id: row.tier_id, name: row.tier_name, amount, renewal: row.tier_renewal, txType: row.tier_tx_type, awaiting: row.tier_status === 'awaiting' } : null,
     billingStart: row.billing_start, membershipStart: row.membership_start,
     periods: Number(row.periods), due, paid, balance, pending: round2(row.pending_gbp),
     currentPeriodStart: periodStart,
-    nextRenewal: yearly ? addYears(row.billing_start, Number(row.periods)) : null,
-    paidUntil: yearly && amount > 0 && paid >= amount ? addYears(row.billing_start, Math.floor(paid / amount)) : null,
-    state: balance <= 0 ? 'up_to_date' : paid > 0 ? 'part_paid' : 'unpaid',
+    nextRenewal: yearly && !awaiting ? addYears(row.billing_start, Number(row.periods)) : null,
+    paidUntil: yearly && !awaiting && amount > 0 && paid >= amount ? addYears(row.billing_start, Math.floor(paid / amount)) : null,
+    state: awaiting ? 'awaiting_tier' : balance <= 0 ? 'up_to_date' : paid > 0 ? 'part_paid' : 'unpaid',
     feeReview: Boolean(row.fee_review), feeReviewReason: row.fee_review_reason,
     registrationFee: { amount: row.fee_amount, currency: row.fee_currency },
   };
@@ -147,9 +159,11 @@ async function syncMember(q, memberId, who) {
   const m = await q.one('SELECT id, payment_status, membership_start FROM members WHERE id = ? FOR UPDATE', [memberId]);
   if (!m) return;
   const f = await memberFinance(memberId, q);
-  const first = await q.one(`SELECT MIN(date_received) AS d, COUNT(*) AS n FROM transactions WHERE member_id = ? AND status IN ${COUNTED} AND type IN (${q2(FEE_TYPES)})`, [memberId]);
+  const first = await q.one(`SELECT MIN(x.date_received) AS d, COUNT(*) AS n FROM transactions x JOIN members m ON m.id = x.member_id
+    LEFT JOIN membership_tiers t ON t.id = m.tier_id WHERE x.member_id = ? AND x.status IN ${COUNTED} AND x.type <> 'refund' AND ${MEMBER_PAYMENT}`, [memberId]);
   let status = m.payment_status;
-  if (Number(first.n) > 0 && f.balance <= 0) status = 'paid';
+  // Not "paid" while the tier is still awaiting confirmation: nothing is due yet.
+  if (Number(first.n) > 0 && f.balance <= 0 && !f.tier?.awaiting) status = 'paid';
   else if (m.payment_status === 'paid') status = 'pending_payment';
   const start = first.d || null;
   if (status !== m.payment_status || String(start || '') !== String(m.membership_start || '')) {
@@ -174,7 +188,7 @@ async function syncPledge(q, donationId, who) {
 }
 
 async function applyEffects(q, tx, who) {
-  if (tx.member_id && (TYPES[tx.type]?.fee || tx.type === 'refund')) await syncMember(q, tx.member_id, who);
+  if (tx.member_id && (TYPES[tx.type]?.fee || ['refund', 'visit_contribution'].includes(tx.type))) await syncMember(q, tx.member_id, who);
   if (tx.donation_id) await syncPledge(q, tx.donation_id, who);
 }
 
@@ -238,13 +252,13 @@ async function validate(input, { allowMissingRate = false } = {}) {
     else { v.payer_name ||= m.full_name; v.payer_email ||= m.email; }
   } else if (TYPES[v.type]?.fee) errors.memberId = 'Choose the member this fee is for.';
   if (v.donation_id) {
-    const d = await db.one('SELECT id, full_name, email, donor_kenyan, status FROM donations WHERE id = ?', [v.donation_id]);
+    const d = await db.one('SELECT id, kind, full_name, email, donor_kenyan, status FROM donations WHERE id = ?', [v.donation_id]);
     if (!d) errors.donationId = 'That pledge no longer exists.';
-    else if (v.type !== 'donation') errors.donationId = 'Only donations can be linked to a pledge.';
+    else if (v.type !== d.kind) errors.donationId = d.kind === 'visit_contribution' ? 'That pledge is a visit contribution: record it as a Visit contribution.' : 'Only a Donation can be linked to a donation pledge.';
     else if (d.status === 'cancelled') errors.donationId = 'That pledge was cancelled.';
     else { v.payer_name ||= d.full_name; v.payer_email ||= d.email; }
   }
-  if (v.type === 'donation') {
+  if (TYPES[v.type]?.pledge) {
     v.donor_kenyan = DONOR_KENYAN.includes(input.donorKenyan) ? input.donorKenyan : 'unknown';
   }
   if (!v.payer_name) errors.payerName = 'Enter who paid.';
@@ -426,7 +440,7 @@ ${url ? `<p><a href="${esc(url)}">View or print this receipt</a></p>` : ''}
 module.exports = {
   TYPES, METHODS, CURRENCIES, ACCOUNTS, STATUSES, DONOR_KENYAN, FEE_TYPES, COUNTED, SIGNED_GBP, BALANCE_EXPR, MEMBER_BALANCE_SELECT,
   FinanceError, round2,
-  getFinanceSettings, saveFinanceSettings, listTiers, updateTier, publicTiers, tierSentence, gbpText,
+  getFinanceSettings, saveFinanceSettings, listTiers, updateTier, publicTiers, tierSentence, tierNeedsApproval, gbpText,
   memberFinance, syncMember, syncPledge,
   validate, recordTransaction, updateTransaction, verifyTransaction, reconcileTransaction, rejectTransaction, voidTransaction,
   receiptUrl, renderReceiptPage, emailReceipt,

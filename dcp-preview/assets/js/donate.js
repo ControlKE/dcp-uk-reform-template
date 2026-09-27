@@ -9,6 +9,14 @@
   let frequency = 'one_off';
   let presetAmount = 25;
 
+  // Donation or visit contribution: the visit amount is fixed (from the tier table).
+  const kind = () => (form.elements.kind && form.elements.kind.value) || 'donation';
+  function syncKind() {
+    form.querySelectorAll('[data-when-kind]').forEach((el) => { el.hidden = el.dataset.whenKind !== kind(); });
+  }
+  form.querySelectorAll('input[name="kind"]').forEach((r) => r.addEventListener('change', syncKind));
+  syncKind();
+
   function select(buttons, active) {
     buttons.forEach((b) => {
       b.classList.toggle('selected', b === active);
@@ -39,9 +47,10 @@
   function renderDone(result) {
     const a = result.donationAccount;
     const amount = formatGbp(result.amountGbp);
+    const visit = result.kind === 'visit_contribution';
     form.querySelector('[data-done-intro]').textContent = result.frequency === 'monthly'
       ? `To give ${amount} a month, set up a standing order with your bank using the details below.`
-      : `Please transfer ${amount} using the details below.`;
+      : `Please transfer ${amount} ${visit ? 'for your visit contribution ' : ''}using the details below.`;
     const dl = document.getElementById('donation-details');
     dl.replaceChildren();
     addRow(dl, 'Account name', a.accountName);
@@ -64,6 +73,8 @@
     e.preventDefault();
     clearErrors(form);
     const data = {
+      kind: kind(),
+      memberReference: form.elements.memberReference.value,
       amountGbp: custom.value ? Number(custom.value) : presetAmount,
       frequency,
       fullName: form.elements.fullName.value,

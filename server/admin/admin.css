@@ -968,3 +968,11 @@ button.adm-earn-tab.selected { border-color: var(--adm-link); background: var(--
 @media (prefers-reduced-motion: reduce) {
   .adm *, .adm *::before, .adm *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* ---------------------------------------------------------------- tier descriptions and approvals */
+.adm-tier .adm-tier-desc, .adm-tier .adm-tier-kind { grid-column: 1 / -1; }
+.adm-tier-kind { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; font-size: 13px; color: var(--adm-muted); }
+.adm-alert-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+/* Longer status badges (e.g. "Stakeholder: awaiting approval") wrap in narrow columns. */
+.adm-badge.adm-badge-wrap { white-space: normal; align-items: flex-start; }
+.adm-badge.adm-badge-wrap::before { flex: none; margin-top: 6px; }

@@ -113,18 +113,18 @@ async function saveSetting(key, value, adminUsername) {
   `, [key, JSON.stringify(value), adminUsername]);
 }
 
-// The fee a new registration pays: the Ordinary tier, in GBP, with its optional
-// approximate KES figure (display only).
-async function registrationFee() {
-  const t = await db.one("SELECT name, amount, display_kes, renewal FROM membership_tiers WHERE tkey = 'ordinary'");
-  if (!t) return { feeAmount: 20, feeCurrency: 'GBP', feeKes: null, feeRenewal: 'yearly', feeTier: 'Ordinary membership' };
-  return { feeAmount: Number(t.amount), feeCurrency: 'GBP', feeKes: t.display_kes === null ? null : Number(t.display_kes), feeRenewal: t.renewal, feeTier: t.name };
+// The fee for joining on a tier (Ordinary unless another is given), in GBP, with
+// its optional approximate KES figure (display only).
+async function registrationFee(tierKey = 'ordinary') {
+  const t = await db.one("SELECT tkey, name, amount, display_kes, renewal FROM membership_tiers WHERE tkey = ? AND kind = 'membership'", [tierKey]);
+  if (!t) return { feeAmount: 20, feeCurrency: 'GBP', feeKes: null, feeRenewal: 'yearly', feeTier: 'Ordinary membership', feeTierKey: 'ordinary' };
+  return { feeAmount: Number(t.amount), feeCurrency: 'GBP', feeKes: t.display_kes === null ? null : Number(t.display_kes), feeRenewal: t.renewal, feeTier: t.name, feeTierKey: t.tkey };
 }
 
 // What the public pages are allowed to see: only the fields that apply to the
 // chosen method, and no account details at all until an admin has saved the account.
-async function publicFeeAccount() {
-  const [{ value: a, configured }, fee] = await Promise.all([getSetting('feeAccount'), registrationFee()]);
+async function publicFeeAccount(tierKey) {
+  const [{ value: a, configured }, fee] = await Promise.all([getSetting('feeAccount'), registrationFee(tierKey)]);
   if (!configured) return { configured: false, ...fee };
   const base = { configured: true, method: a.method, ...fee, accountName: a.accountName, instructions: a.instructions };
   if (a.method === 'bank') return { ...base, bankName: a.bankName, accountNumber: a.accountNumber, sortCode: a.sortCode, iban: a.iban, swift: a.swift };

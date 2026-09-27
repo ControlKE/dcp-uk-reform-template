@@ -40,7 +40,7 @@
   <div class="container">
     <p class="breadcrumb"><a href="index.html">Home</a> / Membership</p>
     <h1>Become a DCP Member</h1>
-    <p>Five short steps. <span data-tiers="summary">Ordinary membership: &pound;20 a year, renewed annually. Stakeholder membership: &pound;500 a year. Visit contribution: &pound;200, one-off.</span></p>
+    <p>Five short steps. <span data-tiers="summary">Ordinary membership: &pound;20 a year, renewed annually. Stakeholder membership: &pound;500 a year.</span></p>
   </div>
 </section>
 <section class="section section-light">
@@ -59,6 +59,10 @@
 
           <fieldset class="form-step" data-step="1">
             <legend>Personal Details</legend>
+            <div class="field full tier-field" data-field="tier">
+              <p class="tier-choice-label" id="m-tier-label">Membership tier *</p>
+              <div class="tier-choices" role="radiogroup" aria-labelledby="m-tier-label" data-tiers="choices"><label class="tier-choice"><input type="radio" name="tier" value="ordinary" checked><span class="tier-choice-body"><span class="tier-choice-head"><strong>Ordinary membership</strong><span class="tier-price">&pound;20 a year</span></span><span class="tier-desc">Standard membership, renewed every year.</span></span></label><label class="tier-choice"><input type="radio" name="tier" value="stakeholder"><span class="tier-choice-body"><span class="tier-choice-head"><strong>Stakeholder membership</strong><span class="tier-price">&pound;500 a year</span></span><span class="tier-desc">For members who support the chapter at a higher level, renewed every year. The chapter confirms Stakeholder applications before the fee is due.</span></span></label></div>
+            </div>
             <div class="form-grid">
               <div class="field full"><label for="m-fullName">Full legal name *</label><input id="m-fullName" name="fullName" type="text" placeholder="As shown on your ID" autocomplete="name" required></div>
               <div class="field"><label for="m-phone">UK mobile number *<span class="hint">A Kenyan number can be given instead if you prefer.</span></label><input id="m-phone" name="phone" type="tel" autocomplete="tel" required></div>
@@ -156,9 +160,9 @@
         <div class="callout-accent" style="margin-bottom:20px;">
           <p class="section-eyebrow" style="justify-content:flex-start;color:var(--accent-2);">MEMBERSHIP FEES</p>
           <p style="font-family:var(--font-display);font-weight:900;font-size:32px;margin:6px 0;color:var(--text-on-light);"><span data-tiers="fee">&pound;20 a year</span></p>
-          <p style="margin:0 0 10px;font-size:13px;color:var(--text-on-light);"><span data-tiers="fee-name">Ordinary membership</span>, which is what this form registers you for.</p>
-          <ul class="tier-list" data-tiers="list"><li><strong>Ordinary membership</strong>: &pound;20 a year</li><li><strong>Stakeholder membership</strong>: &pound;500 a year</li><li><strong>Visit contribution</strong>: &pound;200, one-off</li></ul>
-          <p style="margin:0;font-size:13px;color:var(--text-on-light-muted);">To become a Stakeholder member or make a visit contribution, <a href="contact.html" style="color:var(--accent);font-weight:600;">contact the chapter</a>. You will see the payment details and your own reference at the end of the form, so quote that reference when you pay.</p>
+          <p style="margin:0 0 10px;font-size:13px;color:var(--text-on-light);"><span data-tiers="fee-name">Ordinary membership</span>. You choose your tier at the start of the form.</p>
+          <ul class="tier-list" data-tiers="list"><li><strong>Ordinary membership</strong>: &pound;20 a year</li><li><strong>Stakeholder membership</strong>: &pound;500 a year</li></ul>
+          <p style="margin:0;font-size:13px;color:var(--text-on-light-muted);">You will see the payment details and your own reference at the end of the form, so quote that reference when you pay. Making a visit contribution? Use the <a href="donate.html" style="color:var(--accent);font-weight:600;">Donate page</a>.</p>
         </div>
         <div class="prose">
           <h3 style="margin-top:0;">Eligibility</h3>

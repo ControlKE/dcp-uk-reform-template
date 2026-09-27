@@ -365,7 +365,7 @@
             <select id="m-payment" aria-label="Filter by fee payment"><option value="">All payments</option><option value="pending_payment">Not paid</option><option value="payment_reported">Reported paid (check)</option><option value="paid">Paid (confirmed)</option></select>
             <select id="m-chapter" aria-label="Filter by chapter"><option value="">All chapters</option><option>London</option><option>Manchester</option><option>Birmingham</option><option>Leeds</option><option>Glasgow</option><option>Cardiff</option><option>Nottingham</option><option>Belfast</option><option>None nearby</option></select>
             <select id="m-tier" aria-label="Filter by tier"><option value="">All tiers</option></select>
-            <select id="m-review" aria-label="Filter by fee review"><option value="">Any fee state</option><option value="1">Fee needs review</option></select>
+            <select id="m-review" aria-label="Filter by review"><option value="">Any review</option><option value="1">Fee needs review</option><option value="tier">Tier to approve</option></select>
             <div class="adm-daterange" role="group" aria-label="Date range">
               <label><span class="adm-sr">From date</span><input type="date" id="m-from" aria-label="From date"></label>
               <span aria-hidden="true">–</span>
@@ -390,12 +390,13 @@
       <div data-panel="donations" hidden>
         <section class="adm-card adm-table-card" aria-labelledby="donations-title">
           <div class="adm-card-header">
-            <div><h2 class="adm-card-title" id="donations-title">Donation pledges</h2><p class="adm-muted">A pledge becomes Received when its payment is recorded and verified.</p></div>
+            <div><h2 class="adm-card-title" id="donations-title">Donation pledges</h2><p class="adm-muted">Donations and visit contributions from the Donate page. A pledge becomes Received when its payment is recorded and verified.</p></div>
             <a class="adm-btn adm-btn-outline adm-btn-sm" id="d-export" href="/api/admin/donations.csv"><svg class="ic"><use href="#i-download"/></svg>Export CSV</a>
           </div>
           <div class="toolbar adm-toolbar">
             <label class="adm-search"><svg class="ic"><use href="#i-search"/></svg><span class="adm-sr">Search donations</span><input type="search" id="d-search" placeholder="Search name, email or reference"></label>
             <select id="d-status" aria-label="Filter by status"><option value="">All statuses</option><option value="pledged">Pledged (awaiting transfer)</option><option value="received">Received</option><option value="cancelled">Cancelled</option></select>
+            <select id="d-kind" aria-label="Filter by type"><option value="">Donations and visit contributions</option><option value="donation">Donations</option><option value="visit_contribution">Visit contributions</option></select>
             <select id="d-kenyan" aria-label="Filter by Kenyan-citizen declaration"><option value="">Any declaration</option><option value="flagged">Not declared "yes" (flagged)</option><option value="yes">Declared Kenyan</option><option value="no">Declared not Kenyan</option><option value="unknown">Unknown</option></select>
             <div class="adm-daterange" role="group" aria-label="Date range">
               <label><span class="adm-sr">From date</span><input type="date" id="d-from" aria-label="From date"></label>
@@ -632,7 +633,7 @@
           <section class="adm-card adm-form-card" aria-labelledby="tiers-title">
             <div class="adm-card-header adm-card-header-rule">
               <span class="adm-tile adm-tone-primary" aria-hidden="true"><svg class="ic"><use href="#i-users"/></svg></span>
-              <div><h2 class="adm-card-title" id="tiers-title">Membership tiers</h2><p class="adm-muted">What each tier costs in GBP and whether it renews every year. A change applies to current balances straight away and to the wording on the Membership page. The KES figure is optional, shown to M-Pesa payers as a rough guide, and never used for billing.</p></div>
+              <div><h2 class="adm-card-title" id="tiers-title">Membership tiers</h2><p class="adm-muted">What each tier costs in GBP and whether it renews every year. Members choose Ordinary or Stakeholder when they register; the visit contribution is a payment type on the Donate page. A change applies to current balances straight away and to the wording on the public pages. The KES figure is optional, shown as a rough guide, and never used for billing.</p></div>
             </div>
             <div id="tiers-list" class="adm-tiers"></div>
           </section>
@@ -730,6 +731,7 @@
     <section class="adm-md-finance" id="md-finance" aria-labelledby="md-finance-title">
       <div class="adm-md-finance-head"><h3 id="md-finance-title">Membership fees</h3>
         <button type="button" class="adm-btn adm-btn-primary adm-btn-sm" id="md-pay" data-perm="finance.write"><svg class="ic"><use href="#i-cash"/></svg>Record payment</button></div>
+      <div class="adm-alert adm-alert-warning" id="md-tier-approval" hidden></div>
       <div class="adm-alert adm-alert-warning" id="md-review" hidden></div>
       <div class="adm-md-figures" id="md-figures"></div>
       <ul class="adm-md-tx" id="md-tx"></ul>

@@ -108,14 +108,17 @@ app.get('/api/health', async (req, res) => {
 
 app.get('/api/payment-details', async (req, res) => {
   const [feeAccount, donationAccount, tiers] = await Promise.all([settings.publicFeeAccount(), settings.publicDonationAccount(), finance.publicTiers()]);
-  res.json({ feeAccount, donationAccount, tiers, tierSummary: finance.tierSentence(tiers) });
+  res.json({ feeAccount, donationAccount, tiers, tierSummary: finance.tierSentence(tiers.filter((t) => t.kind === 'membership')) });
 });
 
 app.post('/api/members', submissionLimit, async (req, res) => {
   const { value: m, errors } = validateMember(req.body);
+  const tier = await db.one("SELECT id, tkey, name FROM membership_tiers WHERE tkey = ? AND kind = 'membership' AND active = 1", [m.tier]);
+  if (!tier) errors.tier = 'Choose a membership tier.';
   if (Object.keys(errors).length) return res.status(400).json({ error: 'Please correct the highlighted fields.', fields: errors });
 
-  const feeAccount = await settings.publicFeeAccount();
+  const awaiting = finance.tierNeedsApproval(tier.tkey);
+  const feeAccount = await settings.publicFeeAccount(tier.tkey);
   const reference = await newReference('DCPUK', 'members');
   const accessToken = crypto.randomBytes(24).toString('base64url');
   await db.query(`
@@ -129,18 +132,20 @@ app.post('/api/members', submissionLimit, async (req, res) => {
     m.addressLine1, orNull(m.addressLine2), m.town, orNull(m.county), m.postcode, feeAccount.feeAmount, feeAccount.feeCurrency]);
   const created = await db.one('SELECT id FROM members WHERE reference = ?', [reference]);
   // The form requires the data-consent declaration (validateMember); chapter news is optional.
-  // New members start on the Ordinary tier, with fees counted from today.
+  // Members join on the tier they chose, with fees counted from today. A tier that
+  // needs confirming (Stakeholder) has nothing due until an admin confirms it.
   await db.query(`UPDATE members SET data_consent_at = UTC_TIMESTAMP(), marketing_consent_at = ${m.marketingConsent ? 'UTC_TIMESTAMP()' : 'NULL'},
-      tier_id = (SELECT id FROM membership_tiers WHERE tkey = 'ordinary'), billing_start = UTC_DATE() WHERE id = ?`, [created.id]);
+      tier_id = ?, tier_status = ?, billing_start = UTC_DATE() WHERE id = ?`, [tier.id, awaiting ? 'awaiting' : 'confirmed', created.id]);
   await email.receive({
     source: 'application', fromName: m.fullName, fromEmail: m.email, memberId: created.id, labels: ['Membership'],
     subject: `New membership application: ${m.fullName}`,
-    text: [`${m.fullName} applied to join DCP UK.`, '', `Reference: ${reference}`, `Email: ${m.email}`, `Phone: ${m.phone}`,
+    text: [`${m.fullName} applied to join DCP UK.`, '', `Reference: ${reference}`, `Tier: ${tier.name}${awaiting ? ' (awaiting approval: confirm it in the member record before the fee is due)' : ''}`,
+      `Email: ${m.email}`, `Phone: ${m.phone}`,
       `Chapter: ${m.chapter || 'not chosen'}${m.chapterOther ? ` (${m.chapterOther})` : ''}`, `Town: ${m.town}`, '',
       'Review it under Members. Replying to this message emails the applicant.'].join('\n'),
   }).catch((err) => console.error('Could not add the application to the inbox:', err.message));
 
-  res.status(201).json({ reference, accessToken, feeAccount });
+  res.status(201).json({ reference, accessToken, feeAccount, tierAwaiting: awaiting });
 });
 
 // The applicant tells us they've paid. Only the browser that registered holds the token.
@@ -175,14 +180,19 @@ app.post('/api/donations', submissionLimit, async (req, res) => {
   if (!donationAccount.configured) {
     return res.status(503).json({ error: 'Donations are not open yet: the chapter has not set up its bank account.' });
   }
-  const { value: d, errors } = validateDonation(req.body);
+  const visit = await db.one("SELECT amount FROM membership_tiers WHERE tkey = 'visit' AND active = 1");
+  const { value: d, errors } = validateDonation(req.body, { visitAmount: visit ? Number(visit.amount) : null });
   if (Object.keys(errors).length) return res.status(400).json({ error: 'Please correct the highlighted fields.', fields: errors });
 
+  // A member's reference links the contribution only when the email matches that member
+  // too. The reply is the same either way, so the form can't be used to test references.
+  const member = d.memberReference
+    ? await db.one('SELECT id FROM members WHERE reference = ? AND email = ?', [d.memberReference, d.email]) : null;
   const reference = await newReference('DON', 'donations');
-  await db.query(`INSERT INTO donations (reference, full_name, email, amount_gbp, frequency, message, donor_kenyan, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
-  [reference, d.fullName, d.email, d.amountGbp, d.frequency, orNull(d.message), d.donorKenyan]);
-  res.status(201).json({ reference, amountGbp: d.amountGbp, frequency: d.frequency, donationAccount });
+  await db.query(`INSERT INTO donations (reference, kind, member_id, member_reference, full_name, email, amount_gbp, frequency, message, donor_kenyan, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
+  [reference, d.kind, member?.id ?? null, orNull(d.memberReference), d.fullName, d.email, d.amountGbp, d.frequency, orNull(d.message), d.donorKenyan]);
+  res.status(201).json({ reference, kind: d.kind, amountGbp: d.amountGbp, frequency: d.frequency, donationAccount });
 });
 
 // Contact form. Rate limited per IP, with a honeypot field and a minimum fill
@@ -617,6 +627,7 @@ adminApi.get('/notifications', need('dashboard'), async (req, res) => {
     pending: await n("SELECT COUNT(*) AS n FROM members WHERE status = 'pending'"),
     paymentsToCheck: await n("SELECT COUNT(*) AS n FROM transactions WHERE status = 'pending'"),
     feeReviews: await n('SELECT COUNT(*) AS n FROM members WHERE fee_review = 1'),
+    tierApprovals: await n("SELECT COUNT(*) AS n FROM members WHERE tier_status = 'awaiting' AND status <> 'rejected'"),
     donationsPledged: await n("SELECT COUNT(*) AS n FROM donations WHERE status = 'pledged'"),
     unreadMessages: await n("SELECT COUNT(*) AS n FROM emails WHERE folder = 'inbox' AND is_read = 0 AND source = 'contact'"),
     failedEmails: await n("SELECT COUNT(*) AS n FROM emails WHERE folder = 'sent' AND status IN ('failed', 'partial')"),
@@ -635,7 +646,7 @@ const MEMBER_COLUMNS = `
   m.id_document_number, m.language, m.occupation, m.interest, m.interest_other, m.chapter, m.chapter_other, m.address_line1,
   m.address_line2, m.town, m.county, m.postcode, m.fee_amount, m.fee_currency, m.payment_status, m.payment_note, m.status,
   m.admin_notes, m.created_at, m.updated_at, m.tier_id, m.fee_review, m.fee_review_reason, m.membership_start,
-  m.marketing_consent_at, m.email_opt_out,
+  m.marketing_consent_at, m.email_opt_out, m.tier_status,
   (SELECT name FROM membership_tiers WHERE id = m.tier_id) AS tier_name,
   (SELECT COUNT(*) FROM members d WHERE d.id <> m.id AND (d.id_document_number = m.id_document_number OR d.email = m.email)) AS possible_duplicates`;
 
@@ -653,6 +664,7 @@ function memberFilters(q) {
   if (q.chapter) { where.push('m.chapter = ?'); params.push(String(q.chapter)); }
   if (Number(q.tier)) { where.push('m.tier_id = ?'); params.push(Number(q.tier)); }
   if (q.review === '1') where.push('m.fee_review = 1');
+  if (q.review === 'tier') where.push("m.tier_status = 'awaiting'");
   if (q.q) {
     const like = likeParam(q.q);
     where.push('(m.full_name LIKE ? OR m.email LIKE ? OR m.reference LIKE ? OR m.phone LIKE ? OR m.id_document_number LIKE ? OR m.postcode LIKE ?)');
@@ -701,7 +713,7 @@ adminApi.get('/members.csv', need('members.read'), async (req, res) => {
     ['occupation', 'Occupation'], ['interest', 'Interest'], ['interest_other', 'Interest (other)'],
     ['chapter', 'Chapter'], ['chapter_other', 'Nearest town/city'],
     ['address_line1', 'Address 1'], ['address_line2', 'Address 2'], ['town', 'Town'], ['county', 'County'], ['postcode', 'Postcode'],
-    ['tier_name', 'Tier'], ['fee_amount', 'Registration fee quoted'], ['fee_currency', 'Fee currency'], ['fee_review', 'Fee needs review'],
+    ['tier_name', 'Tier'], ['tier_status', 'Tier status'], ['fee_amount', 'Registration fee quoted'], ['fee_currency', 'Fee currency'], ['fee_review', 'Fee needs review'],
     ['payment_note', 'Payment code given'], ['admin_notes', 'Admin notes'],
   ], await memberQuery(req.query));
 });
@@ -725,7 +737,7 @@ adminApi.patch('/members/:id', need('members.write'), async (req, res) => {
   const updates = [];
   const params = [];
   const id = Number(req.params.id) || 0;
-  const current = await db.one('SELECT reference, status, admin_notes, payment_status, tier_id, fee_review FROM members WHERE id = ?', [id]);
+  const current = await db.one('SELECT reference, status, admin_notes, payment_status, tier_id, tier_status, fee_review FROM members WHERE id = ?', [id]);
   if (!current) return res.status(404).json({ error: 'Member not found.' });
   let notes = b.adminNotes !== undefined ? String(b.adminNotes).slice(0, 2000) : undefined;
   let reason = null;
@@ -746,12 +758,28 @@ adminApi.patch('/members/:id', need('members.write'), async (req, res) => {
     updates.push('payment_status = ?'); params.push(b.paymentStatus);
   }
   let tierChanged = false;
-  if (b.tierId !== undefined && Number(b.tierId) !== current.tier_id) {
-    const tier = await db.one('SELECT id, active FROM membership_tiers WHERE id = ?', [Number(b.tierId) || 0]);
+  let tierNote = null;
+  if (b.tierDecision !== undefined) {
+    // A tier awaiting approval: confirm it, or move the member to Ordinary (reason required).
+    if (current.tier_status !== 'awaiting') return res.status(400).json({ error: 'This member\'s tier is not awaiting approval.' });
+    if (b.tierDecision === 'confirm') {
+      updates.push("tier_status = 'confirmed'");
+      tierNote = reasonNote('Tier confirmed', req.admin.username, cleanReason(b.reason) || 'approved');
+    } else if (b.tierDecision === 'ordinary') {
+      const reasonText = cleanReason(b.reason);
+      if (!reasonText) return res.status(400).json({ error: 'Give a reason for moving this member to Ordinary.' });
+      updates.push("tier_id = (SELECT id FROM membership_tiers WHERE tkey = 'ordinary')", "tier_status = 'confirmed'");
+      tierNote = reasonNote('Moved to Ordinary', req.admin.username, reasonText);
+    } else return res.status(400).json({ error: 'Unknown tier decision.' });
+    tierChanged = true;
+  } else if (b.tierId !== undefined && Number(b.tierId) !== current.tier_id) {
+    const tier = await db.one("SELECT id, active FROM membership_tiers WHERE id = ? AND kind = 'membership'", [Number(b.tierId) || 0]);
     if (!tier || !tier.active) return res.status(400).json({ error: 'Choose an active membership tier.' });
-    updates.push('tier_id = ?'); params.push(tier.id);
+    // An admin choosing the tier is itself the confirmation.
+    updates.push('tier_id = ?', "tier_status = 'confirmed'"); params.push(tier.id);
     tierChanged = true;
   }
+  if (tierNote) notes = [notes ?? current.admin_notes, tierNote].filter(Boolean).join('\n');
   if (b.feeReviewResolved === true && current.fee_review) {
     if (!can(req.admin, 'finance.write')) return res.status(403).json({ error: 'Only the treasurer can clear a fee review.' });
     updates.push('fee_review = 0');
@@ -759,13 +787,14 @@ adminApi.patch('/members/:id', need('members.write'), async (req, res) => {
   }
   if (notes !== undefined) { updates.push('admin_notes = ?'); params.push(notes.slice(-4000) || null); }
   if (!updates.length) return res.json({ member: await getMember(id) });
-  const before = await db.one('SELECT status, payment_status, tier_id, fee_review, admin_notes FROM members WHERE id = ?', [id]);
+  const before = await db.one('SELECT status, payment_status, tier_id, tier_status, fee_review, admin_notes FROM members WHERE id = ?', [id]);
   await db.transaction(async (q) => {
     await q.query(`UPDATE members SET ${updates.join(', ')}, updated_at = UTC_TIMESTAMP() WHERE id = ?`, [...params, id]);
-    const after = await q.one('SELECT status, payment_status, tier_id, fee_review, admin_notes FROM members WHERE id = ?', [id]);
+    const after = await q.one('SELECT status, payment_status, tier_id, tier_status, fee_review, admin_notes FROM members WHERE id = ?', [id]);
     const d = audit.diff(before, after);
     const changed = Object.keys(d.after);
-    await audit.record(q, { ...audit.fromReq(req), action: reason ? 'member.rejected' : 'member.updated', entity: 'member', entityId: id,
+    const action = reason ? 'member.rejected' : b.tierDecision === 'confirm' ? 'member.tier_confirmed' : b.tierDecision === 'ordinary' ? 'member.tier_declined' : 'member.updated';
+    await audit.record(q, { ...audit.fromReq(req), action, entity: 'member', entityId: id,
       summary: reason ? `Rejected ${current.reference}: ${reason}` : `${current.reference}: ${changed.map((k) => (k === 'admin_notes' ? 'notes' : k)).join(', ')}`, ...d });
     if (tierChanged) await finance.syncMember(q, id, audit.fromReq(req));
   });
@@ -795,6 +824,7 @@ function donationFilters(q) {
   const where = [];
   const params = [];
   if (DONATION_STATUSES.includes(q.status)) { where.push('status = ?'); params.push(q.status); }
+  if (['donation', 'visit_contribution'].includes(q.kind)) { where.push('kind = ?'); params.push(q.kind); }
   if (q.kenyan === 'flagged') where.push("donor_kenyan <> 'yes'");
   if (['yes', 'no', 'unknown'].includes(q.kenyan)) { where.push('donor_kenyan = ?'); params.push(q.kenyan); }
   if (q.q) {
@@ -816,7 +846,8 @@ async function donationQuery(q) {
 adminApi.get('/donations', need('donations.read'), async (req, res) => {
   const { where, params } = donationFilters(req.query);
   const { rows, ...page } = await paged(db, {
-    select: `*, (SELECT COALESCE(SUM(x.amount_gbp), 0) FROM transactions x WHERE x.donation_id = donations.id AND x.status IN ('verified', 'reconciled')) AS received_gbp`,
+    select: `*, (SELECT COALESCE(SUM(x.amount_gbp), 0) FROM transactions x WHERE x.donation_id = donations.id AND x.status IN ('verified', 'reconciled')) AS received_gbp,
+      (SELECT reference FROM members WHERE id = donations.member_id) AS linked_member_reference`,
     from: 'donations', where, params,
     p: pageParams(req.query, DONATION_SORTS, 'pledged'), tiebreak: 'id DESC',
   });
@@ -825,13 +856,14 @@ adminApi.get('/donations', need('donations.read'), async (req, res) => {
 
 adminApi.get('/donations.csv', need('donations.read'), async (req, res) => {
   sendCsv(res, `dcp-uk-donations-${new Date().toISOString().slice(0, 10)}.csv`, [
-    ['reference', 'Reference'], ['created_at', 'Pledged (UTC)'], ['status', 'Status'], ['amount_gbp', 'Amount (GBP)'],
-    ['frequency', 'Frequency'], ['full_name', 'Name'], ['email', 'Email'], ['donor_kenyan', 'Kenyan citizen (declared)'], ['message', 'Message'], ['admin_notes', 'Admin notes'],
+    ['reference', 'Reference'], ['kind', 'Type'], ['created_at', 'Pledged (UTC)'], ['status', 'Status'], ['amount_gbp', 'Amount (GBP)'],
+    ['frequency', 'Frequency'], ['full_name', 'Name'], ['email', 'Email'], ['member_reference', 'Membership reference given'], ['donor_kenyan', 'Kenyan citizen (declared)'], ['message', 'Message'], ['admin_notes', 'Admin notes'],
   ], await donationQuery(req.query));
 });
 
 adminApi.get('/donations/:id', need('donations.read'), async (req, res) => {
-  const donation = await db.one('SELECT * FROM donations WHERE id = ?', [Number(req.params.id) || 0]);
+  const donation = await db.one(`SELECT d.*, m.reference AS linked_member_reference, m.full_name AS linked_member_name
+    FROM donations d LEFT JOIN members m ON m.id = d.member_id WHERE d.id = ?`, [Number(req.params.id) || 0]);
   if (!donation) return res.status(404).json({ error: 'Donation not found.' });
   const transactions = await db.query(`SELECT id, receipt_no, amount, currency, amount_gbp, status, date_received FROM transactions
     WHERE donation_id = ? ORDER BY date_received DESC, id DESC`, [donation.id]);

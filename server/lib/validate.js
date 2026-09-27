@@ -54,6 +54,8 @@ function validateMember(body) {
     town: str(b.town, 80),
     county: str(b.county, 80),
     postcode: str(b.postcode, 10).toUpperCase(),
+    // The tier key chosen on the form; the server checks it against the tier table.
+    tier: str(b.tier, 30) || 'ordinary',
   };
 
   if (m.fullName.length < 2) fail('fullName', 'Enter your full legal name.');
@@ -96,20 +98,28 @@ function validateMember(body) {
   return { value: m, errors };
 }
 
-function validateDonation(body) {
+// visitAmount: the visit contribution's fixed amount from the tier table, when that
+// payment type is chosen (the amount and frequency sent by the browser are ignored).
+function validateDonation(body, { visitAmount = null } = {}) {
   const errors = {};
   const fail = collect(errors);
   const b = body || {};
-  const amount = Math.round(Number(b.amountGbp) * 100) / 100;
+  const kind = b.kind === 'visit_contribution' ? 'visit_contribution' : 'donation';
+  const amount = kind === 'visit_contribution' ? visitAmount : Math.round(Number(b.amountGbp) * 100) / 100;
   const d = {
+    kind,
     fullName: str(b.fullName, 120),
     email: str(b.email, 200).toLowerCase(),
     amountGbp: amount,
-    frequency: str(b.frequency, 20),
+    frequency: kind === 'visit_contribution' ? 'one_off' : str(b.frequency, 20),
     message: str(b.message, 1000),
+    // Optional, for visit contributions from members.
+    memberReference: kind === 'visit_contribution' ? str(b.memberReference, 20).toUpperCase().replace(/\s+/g, '') : '',
   };
-  if (!Number.isFinite(amount) || amount < 1 || amount > 10000) fail('amountGbp', 'Enter an amount between £1 and £10,000.');
+  if (kind === 'visit_contribution' && visitAmount === null) fail('kind', 'Visit contributions are not open at the moment.');
+  else if (!Number.isFinite(amount) || amount < 1 || amount > 10000) fail('amountGbp', 'Enter an amount between £1 and £10,000.');
   if (!OPTIONS.frequency.includes(d.frequency)) fail('frequency', 'Choose one-off or monthly.');
+  if (d.memberReference && !/^[A-Z0-9-]{4,20}$/.test(d.memberReference)) fail('memberReference', 'Check your membership reference, e.g. DCPUK-AB12CD, or leave it empty.');
   if (d.fullName.length < 2) fail('fullName', 'Enter your full name.');
   if (!EMAIL_RE.test(d.email)) fail('email', 'Enter a valid email address.');
   if (b.acknowledged !== true) fail('acknowledged', 'Please tick the box to confirm you understand where this donation goes.');

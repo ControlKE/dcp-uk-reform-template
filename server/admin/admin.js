@@ -664,6 +664,7 @@
     if (n.unreadMessages) items.push(item('warning', 'mail', `${plural(n.unreadMessages, 'unread message')}`, 'From the website contact form', () => openTab('email', new URLSearchParams({ label: String(mailLabels.find((l) => l.name === 'Contact')?.id || '') }))));
     if (n.failedEmails) items.push(item('danger', 'alert', `${plural(n.failedEmails, 'email')} failed to send`, 'Open Sent to see the errors', () => openTab('email', new URLSearchParams({ folder: 'sent' }))));
     if (n.paymentsToCheck) items.push(item('bright', 'cash', `${plural(n.paymentsToCheck, 'payment')} to verify`, 'Recorded or reported, not verified yet', () => (canDo('finance.read') ? openTab('transactions', new URLSearchParams({ status: 'pending' })) : showMembers({ payment: 'payment_reported' }))));
+    if (n.tierApprovals && canDo('members.write')) items.push(item('warning', 'users', `${plural(n.tierApprovals, 'tier')} awaiting approval`, 'Stakeholder registrations to confirm', () => showMembers({ review: 'tier' })));
     if (n.feeReviews && canDo('finance.write')) items.push(item('warning', 'alert', `${plural(n.feeReviews, 'fee record')} to review`, 'Imported or pre-Finance fees to check', () => showMembers({ review: '1' })));
     for (const m of n.newRegistrations) items.push(item('warning', 'user-plus', `New registration: ${m.full_name}`, `${m.chapter || 'No chapter'} · ${when(m.created_at)}`, () => openMember(m.id)));
     if (n.pending > n.newRegistrations.length) items.push(item('primary', 'users', `All ${n.pending} pending applications`, 'Open the Members list', () => showMembers({ status: 'pending' })));
@@ -753,6 +754,11 @@
     const dl = $('#dd-details');
     dl.replaceChildren();
     row(dl, 'Email', d.email);
+    row(dl, 'Type', d.kind === 'visit_contribution' ? 'Visit contribution' : 'Donation');
+    if (d.kind === 'visit_contribution') {
+      row(dl, 'Member', d.linked_member_reference ? `${d.linked_member_name || ''} (${d.linked_member_reference})`
+        : d.member_reference ? `${d.member_reference} given, but it doesn't match a member with this email` : 'Not given');
+    }
     row(dl, 'Amount', `${gbp(d.amount_gbp)} (${d.frequency === 'monthly' ? 'monthly' : 'one-off'})`);
     row(dl, 'Status', DONATION_LABELS[d.status]?.[0] || d.status);
     row(dl, 'Message', d.message);
@@ -1049,7 +1055,8 @@
       el('td', { class: 'col-contact' }, el('div', {}, el('span', { class: 'adm-email', title: m.email, text: m.email }), el('span', { class: 'sub', text: m.phone }))),
       el('td', { text: m.chapter || '—' }),
       el('td', { class: 'when col-reg', title: when(m.created_at), text: day(m.created_at) }),
-      el('td', {}, el('div', { class: 'adm-badges' }, badge(PAYMENT_LABELS[m.payment_status]), m.fee_review ? el('span', { class: 'adm-badge warn', title: 'Fee needs review', text: 'Review' }) : null)),
+      el('td', {}, el('div', { class: 'adm-badges' }, badge(PAYMENT_LABELS[m.payment_status]), m.fee_review ? el('span', { class: 'adm-badge warn', title: 'Fee needs review', text: 'Review' }) : null,
+        m.tier_status === 'awaiting' ? el('span', { class: 'adm-badge warn adm-badge-wrap', title: `${m.tier_name}: awaiting approval`, text: `${(m.tier_name || 'Tier').replace(/ membership$/i, '')}: awaiting approval` }) : null)),
       el('td', {}, badge(STATUS_LABELS[m.status])),
       el('td', { class: 'actions' }, rowMenu(`Actions for ${m.full_name}`, [
         { icon: 'eye', text: 'View details', onClick: () => openMember(m.id) },
@@ -1094,7 +1101,7 @@
     row(dl, 'Last updated', when(m.updated_at));
     const f = $('#md-form');
     await financeOptions().catch(() => {});
-    $('#md-tier').replaceChildren(...(finOpts?.tiers || []).filter((t) => t.active || t.id === m.tier_id).map((t) => el('option', { value: String(t.id), text: `${t.name} (${gbp(t.amount)}${t.renewal === 'yearly' ? ' a year' : ', once'})` })));
+    $('#md-tier').replaceChildren(...(finOpts?.tiers || []).filter((t) => (t.active && t.kind === 'membership') || t.id === m.tier_id).map((t) => el('option', { value: String(t.id), text: `${t.name} (${gbp(t.amount)}${t.renewal === 'yearly' ? ' a year' : ', once'})` })));
     f.elements.tierId.value = String(m.tier_id || '');
     f.elements.status.value = m.status;
     f.elements.paymentStatus.value = m.payment_status;
@@ -1163,6 +1170,7 @@
     },
       el('td', { class: 'mono', text: d.reference }),
       el('td', {}, el('div', {}, el('strong', { text: d.full_name }), el('span', { class: 'sub adm-email', title: d.email, text: d.email }),
+        d.kind === 'visit_contribution' ? el('span', { class: 'adm-badge', text: d.linked_member_reference ? `Visit contribution · ${d.linked_member_reference}` : 'Visit contribution' }) : null,
         d.donor_kenyan !== 'yes' ? el('span', { class: 'adm-kenyan-sub', text: `Kenyan: ${d.donor_kenyan || 'unknown'}` }) : null)),
       el('td', { class: 'amount' }, el('div', {}, gbp(d.amount_gbp), el('span', { class: 'sub', text: d.frequency === 'monthly' ? 'monthly' : 'one-off' }))),
       el('td', { class: 'when col-pledged', title: when(d.created_at), text: day(d.created_at) }),
@@ -1950,6 +1958,7 @@
   const methodLabel = (m) => finOpts?.methods[m] || m;
   const isOut = (t) => Boolean(finOpts?.types[t]?.out);
   const isFeeType = (t) => Boolean(finOpts?.types[t]?.fee);
+  const isPledgeType = (t) => Boolean(finOpts?.types[t]?.pledge);
   const txAmount = (x) => `${isOut(x.type) ? '−' : ''}${money(x.amount, x.currency)}`;
   const fmtDate = (iso) => (iso ? new Date(`${String(iso).slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '');
   const todayIso = () => new Date().toISOString().slice(0, 10);
@@ -2107,15 +2116,15 @@
     }
     first?.focus();
   }
-  const defaultAccount = (type) => (isFeeType(type) || type === 'refund' ? 'fee_account' : type === 'donation' ? 'donations_account' : 'other');
+  const defaultAccount = (type) => (isFeeType(type) || type === 'refund' ? 'fee_account' : isPledgeType(type) ? 'donations_account' : 'other');
   function syncRp() {
     const type = $('#rpd-type').value;
     const cur = $('#rpd-currency').value;
     const show = {
-      member: isFeeType(type) || type === 'refund',
-      pledge: type === 'donation',
+      member: isFeeType(type) || type === 'refund' || type === 'visit_contribution',
+      pledge: isPledgeType(type),
       payer: !rp.member,
-      kenyan: type === 'donation',
+      kenyan: isPledgeType(type),
       fx: cur !== 'GBP',
     };
     $$('[data-show]', rpf).forEach((n) => { n.hidden = !show[n.dataset.show]; });
@@ -2124,10 +2133,13 @@
     const rate = Number($('#rpd-rate').value);
     $('#rpd-gbp').textContent = cur === 'GBP' ? '' : amount > 0 && rate > 0 ? gbp(Math.round((amount / rate) * 100) / 100) : 'Enter the amount and rate';
     if (!rp.accountTouched) $('#rpd-account').value = defaultAccount(type);
-    if (show.pledge && !rp.pledges) loadPledgeOptions();
+    if (show.pledge && rp.pledgeKind !== type) loadPledgeOptions();
   }
+  // Pledges of the same kind as the payment: donations, or visit contributions.
   async function loadPledgeOptions(selectedId) {
-    rp.pledges = (await api('GET', '/api/admin/donations?status=pledged&pageSize=100&sort=pledged&dir=desc').catch(() => ({ donations: [] }))).donations;
+    const kind = $('#rpd-type').value;
+    rp.pledgeKind = kind;
+    rp.pledges = (await api('GET', `/api/admin/donations?status=pledged&kind=${kind}&pageSize=100&sort=pledged&dir=desc`).catch(() => ({ donations: [] }))).donations;
     const s = $('#rpd-pledge');
     const keep = selectedId || s.value;
     s.replaceChildren(el('option', { value: '', text: 'Not linked to a pledge' }), ...rp.pledges.map((p) => el('option', { value: String(p.id), text: `${p.reference} · ${p.full_name} · ${gbp(p.amount_gbp)}` })));
@@ -2189,14 +2201,16 @@
   async function openRecordPayment(pre = {}) {
     await financeOptions();
     rpf.reset();
-    rp = { editId: pre.editId || null, member: null, accountTouched: Boolean(pre.account), pledges: null, extraPledge: pre.donation || null };
+    rp = { editId: pre.editId || null, member: null, accountTouched: Boolean(pre.account), pledges: null, pledgeKind: null, extraPledge: pre.donation || null };
     alertIn(rpd, '');
     rpErrors();
     const opt = (v, t) => el('option', { value: v, text: t });
     $('#rpd-type').replaceChildren(...Object.entries(finOpts.types).map(([k, t]) => opt(k, t.label)));
     $('#rpd-method').replaceChildren(...Object.entries(finOpts.methods).map(([k, t]) => opt(k, t)));
     $('#rpd-account').replaceChildren(...Object.entries(finOpts.accounts).map(([k, t]) => opt(k, t)));
-    $('#rpd-type').value = pre.type || (pre.donation ? 'donation' : 'membership_fee');
+    $('#rpd-type').value = pre.type || (pre.donation ? pre.donation.kind || 'donation' : 'membership_fee');
+    // A visit contribution a member linked to themselves records against that member.
+    if (!pre.member && pre.donation?.member_id) pre = { ...pre, member: { id: pre.donation.member_id, full_name: pre.donation.linked_member_name || pre.donation.full_name, reference: pre.donation.linked_member_reference } };
     $('#rpd-currency').value = pre.currency || 'GBP';
     $('#rpd-amount').value = pre.amount ?? '';
     $('#rpd-rate').value = pre.fxRate ?? '';
@@ -2216,7 +2230,7 @@
       ? 'Saved as pending. A different admin must verify it before it counts.'
       : 'Saved as pending until it is verified. Four-eyes check is off: verifying your own entry is flagged.';
     syncRp();
-    if ($('#rpd-type').value === 'donation') await loadPledgeOptions(pre.donation?.id || pre.donationId);
+    if (isPledgeType($('#rpd-type').value)) await loadPledgeOptions(pre.donation?.id || pre.donationId);
     await setRpMember(pre.member || null);
     if (!rpd.open) rpd.showModal();
     (pre.member ? $('#rpd-amount') : $('#rpd-type')).focus();
@@ -2236,7 +2250,7 @@
   rpf.addEventListener('submit', async (e) => {
     e.preventDefault();
     const body = {
-      type: $('#rpd-type').value, memberId: rp.member?.id || null, donationId: $('#rpd-type').value === 'donation' ? $('#rpd-pledge').value || null : null,
+      type: $('#rpd-type').value, memberId: rp.member?.id || null, donationId: isPledgeType($('#rpd-type').value) ? $('#rpd-pledge').value || null : null,
       payerName: rp.member ? '' : $('#rpd-payer').value, payerEmail: rp.member ? '' : $('#rpd-payer-email').value,
       amount: $('#rpd-amount').value, currency: $('#rpd-currency').value, fxRate: $('#rpd-currency').value === 'GBP' ? 1 : $('#rpd-rate').value,
       method: $('#rpd-method').value, account: $('#rpd-account').value, dateReceived: $('#rpd-date').value,
@@ -2265,12 +2279,23 @@
     const fig = (label, value, tone) => el('div', { class: `adm-fig${tone ? ` ${tone}` : ''}` }, el('span', { text: label }), el('strong', { text: value }));
     $('#md-figures').replaceChildren(
       fig('Tier', f.tier ? `${f.tier.name} (${gbp(f.tier.amount)}${f.tier.renewal === 'yearly' ? ' a year' : ', once'})` : 'None'),
-      fig(f.tier?.renewal === 'yearly' ? `Due (${f.periods} year${f.periods === 1 ? '' : 's'})` : 'Due', gbp(f.due)),
+      f.state === 'awaiting_tier' ? fig('Due', 'Not yet: tier awaiting approval', 'warn')
+        : fig(f.tier?.renewal === 'yearly' ? `Due (${f.periods} year${f.periods === 1 ? '' : 's'})` : 'Due', gbp(f.due)),
       fig('Paid (verified)', gbp(f.paid)),
-      fig('Balance', f.balance > 0 ? `${gbp(f.balance)} due` : f.balance < 0 ? `${gbp(-f.balance)} in credit` : 'Up to date', f.balance > 0 ? 'bad' : 'good'),
-      fig(f.paidUntil ? 'Paid until' : f.nextRenewal ? 'Renews' : 'Membership start', f.paidUntil ? fmtDate(f.paidUntil) : f.nextRenewal ? fmtDate(f.nextRenewal) : fmtDate(f.membershipStart) || '–'),
+      f.state === 'awaiting_tier' ? (f.paid > 0 ? fig('Balance', `${gbp(f.paid)} held until the tier is confirmed`, 'warn') : '')
+        : fig('Balance', f.balance > 0 ? `${gbp(f.balance)} due` : f.balance < 0 ? `${gbp(-f.balance)} in credit` : 'Up to date', f.balance > 0 ? 'bad' : 'good'),
+      f.paidUntil || f.nextRenewal || f.membershipStart
+        ? fig(f.paidUntil ? 'Paid until' : f.nextRenewal ? 'Renews' : 'Membership start', f.paidUntil ? fmtDate(f.paidUntil) : f.nextRenewal ? fmtDate(f.nextRenewal) : fmtDate(f.membershipStart)) : '',
       f.pending ? fig('Awaiting verification', gbp(f.pending), 'warn') : '',
     );
+    // A tier chosen at registration that needs confirming (Stakeholder): nothing is due until then.
+    const approval = $('#md-tier-approval');
+    approval.hidden = !f.tier?.awaiting;
+    approval.replaceChildren(icon('alert'), el('p', {}, el('strong', { text: `${f.tier?.name || 'Tier'}: awaiting approval. ` }),
+      'Chosen at registration. Nothing is due until an admin confirms it.'),
+    canDo('members.write') ? el('div', { class: 'adm-alert-actions' },
+      el('button', { type: 'button', class: 'adm-btn adm-btn-primary adm-btn-sm', onclick: () => decideTier(m, 'confirm') }, 'Confirm tier'),
+      el('button', { type: 'button', class: 'adm-btn adm-btn-outline adm-btn-sm', onclick: () => decideTier(m, 'ordinary') }, 'Move to Ordinary')) : '');
     const review = $('#md-review');
     review.hidden = !f.feeReview;
     review.replaceChildren(icon('alert'), el('p', {}, el('strong', { text: 'Fee needs review. ' }), f.feeReviewReason || ''),
@@ -2283,6 +2308,21 @@
       el('span', { text: fmtDate(x.date_received) }), el('span', { text: typeLabel(x.type) }), el('strong', { text: txAmount(x) }),
       badge(TX_STATUS[x.status] || [x.status, '']), x.receipt_no ? el('span', { class: 'mono', text: x.receipt_no }) : ''))) : [el('li', { class: 'adm-muted', text: 'No payments recorded yet.' })]));
     $('#md-pay').onclick = () => openRecordPayment({ member: m, type: f.tier?.txType, amount: f.balance > 0 ? f.balance : undefined });
+  }
+
+  async function decideTier(m, decision) {
+    let reason = '';
+    if (decision === 'ordinary') {
+      reason = await askReason({ title: 'Move to Ordinary membership?', sub: 'Say why. It is added to the notes and the audit log, and the Ordinary fee becomes due.', confirm: 'Move to Ordinary' });
+      if (!reason) return;
+    } else if (!confirm(`Confirm ${m.tier_name || 'this tier'} for ${m.full_name}? The tier's fee becomes due.`)) return;
+    try {
+      await api('PATCH', `/api/admin/members/${m.id}`, { tierDecision: decision, reason });
+      toast(decision === 'confirm' ? 'Tier confirmed. The fee is now due.' : 'Moved to Ordinary membership.');
+      openMember(m.id);
+      tables.members.load().catch(() => {});
+      refreshBadges();
+    } catch (err) { toast(err.message, 'error'); }
   }
 
   // ------------------------------------------------------------ donation dialog: payments
@@ -2412,7 +2452,7 @@
   const ACTION_TEXT = {
     'transaction.recorded': 'Recorded a payment', 'transaction.edited': 'Edited a pending payment', 'transaction.verified': 'Verified a payment',
     'transaction.reconciled': 'Reconciled a payment', 'transaction.rejected': 'Rejected a payment', 'transaction.voided': 'Voided a transaction',
-    'member.updated': 'Updated a member', 'member.rejected': 'Rejected a member', 'member.deleted': 'Deleted a member', 'member.payment_synced': 'Payment status updated',
+    'member.updated': 'Updated a member', 'member.rejected': 'Rejected a member', 'member.tier_confirmed': 'Confirmed a member\'s tier', 'member.tier_declined': 'Moved a member to Ordinary', 'member.deleted': 'Deleted a member', 'member.payment_synced': 'Payment status updated',
     'donation.updated': 'Updated a pledge', 'donation.cancelled': 'Cancelled a pledge', 'donation.status_synced': 'Pledge status updated',
     'settings.finance': 'Changed finance settings', 'settings.payment_account': 'Changed a payment account', 'tier.updated': 'Changed a tier',
     'admin.created': 'Added an admin', 'admin.role_changed': 'Changed an admin role', 'admin.password_changed': 'Changed password', 'reminders.sent': 'Sent payment reminders',
@@ -2442,10 +2482,13 @@
 
   function tierRow(t) {
     const f = el('form', { class: 'adm-tier', novalidate: '' },
+      t.kind === 'payment' ? el('p', { class: 'adm-tier-kind' }, el('span', { class: 'adm-badge', text: 'Payment type' }), ' Offered on the Donate page, not chosen as a membership tier.') : '',
       el('div', { class: 'adm-field' }, el('label', { for: `tier-name-${t.id}`, text: 'Name' }), el('input', { id: `tier-name-${t.id}`, name: 'name', value: t.name, maxlength: '80' })),
       el('div', { class: 'adm-field' }, el('label', { for: `tier-amount-${t.id}`, text: 'Amount (£)' }), el('input', { id: `tier-amount-${t.id}`, name: 'amount', type: 'number', min: '0.01', step: '0.01', value: String(t.amount) })),
       el('div', { class: 'adm-field' }, el('label', { for: `tier-renewal-${t.id}`, text: 'Renewal' }),
         el('select', { id: `tier-renewal-${t.id}`, name: 'renewal' }, el('option', { value: 'yearly', text: 'Every year' }), el('option', { value: 'one_off', text: 'One-off' }))),
+      el('div', { class: 'adm-field adm-tier-desc' }, el('label', { for: `tier-desc-${t.id}`, text: t.kind === 'payment' ? 'Description (Donate page)' : 'Description (registration form)' }),
+        el('input', { id: `tier-desc-${t.id}`, name: 'description', value: t.description || '', maxlength: '300' })),
       el('div', { class: 'adm-field' }, el('label', { for: `tier-kes-${t.id}`, text: 'About (KES)' }), el('input', { id: `tier-kes-${t.id}`, name: 'displayKes', type: 'number', min: '1', step: '1', placeholder: 'Optional', value: t.display_kes === null ? '' : String(Math.round(t.display_kes)), title: 'Approximate, for M-Pesa payers. Display only; never used for billing.' })),
       el('button', { type: 'submit', class: 'adm-btn adm-btn-outline adm-btn-sm' }, 'Save'),
     );
@@ -2453,7 +2496,7 @@
     f.addEventListener('submit', async (e) => {
       e.preventDefault();
       try {
-        await busy(f, () => api('PUT', `/api/admin/tiers/${t.id}`, { name: f.elements.name.value, amount: Number(f.elements.amount.value), renewal: f.elements.renewal.value, displayKes: f.elements.displayKes.value }));
+        await busy(f, () => api('PUT', `/api/admin/tiers/${t.id}`, { name: f.elements.name.value, description: f.elements.description.value, amount: Number(f.elements.amount.value), renewal: f.elements.renewal.value, displayKes: f.elements.displayKes.value }));
         toast(`${f.elements.name.value} saved.`);
         await financeOptions(true);
       } catch (err) { toast(err.message, 'error'); }
@@ -2463,7 +2506,7 @@
   }
   async function loadFinanceSettings() {
     const o = await financeOptions(true);
-    $('#tiers-list').replaceChildren(...o.tiers.map(tierRow), el('p', { class: 'adm-hint', text: 'Payments for each tier are recorded as that tier\'s type. Ordinary and Stakeholder renew yearly from the date fees are counted; Visit contribution is paid once.' }));
+    $('#tiers-list').replaceChildren(...o.tiers.map(tierRow), el('p', { class: 'adm-hint', text: 'Payments for each tier are recorded as that tier\'s type. Ordinary and Stakeholder renew yearly from the date fees are counted. Stakeholder registrations wait for an admin to confirm the tier before anything is due.' }));
     const fsForm = $('#finance-settings-form');
     $('#fs-four-eyes').checked = o.settings.requireSecondVerifier;
     $('#fs-meta').textContent = o.settings.updatedBy ? `Last changed ${when(o.settings.updatedAt)} by ${o.settings.updatedBy}.` : 'Default: on.';
@@ -2500,15 +2543,15 @@
       name: 'members', prefix: 'm', endpoint: '/api/admin/members', listKey: 'members', noun: 'member',
       body: $('#members-body'), countId: 'members-count', pagerId: 'members-pager', render: memberRow,
       fields: { q: $('#m-search'), status: $('#m-status'), payment: $('#m-payment'), chapter: $('#m-chapter'), tier: $('#m-tier'), review: $('#m-review'), from: $('#m-from'), to: $('#m-to') },
-      labels: { q: 'Search', status: 'Status', payment: 'Payment', chapter: 'Chapter', tier: 'Tier', review: 'Fee', from: 'From', to: 'To' },
+      labels: { q: 'Search', status: 'Status', payment: 'Payment', chapter: 'Chapter', tier: 'Tier', review: 'Review', from: 'From', to: 'To' },
       defaultSort: 'registered', exportLink: $('#m-export'), exportPath: '/api/admin/members.csv',
       empty: { title: 'No registrations yet', filteredTitle: 'No matching members', text: 'New registrations from the Membership page appear here.' },
     }),
     donations: createTable({
       name: 'donations', prefix: 'd', endpoint: '/api/admin/donations', listKey: 'donations', noun: 'pledge',
       body: $('#donations-body'), countId: 'donations-count', pagerId: 'donations-pager', render: donationRow,
-      fields: { q: $('#d-search'), status: $('#d-status'), kenyan: $('#d-kenyan'), from: $('#d-from'), to: $('#d-to') },
-      labels: { q: 'Search', status: 'Status', kenyan: 'Declaration', from: 'From', to: 'To' },
+      fields: { q: $('#d-search'), status: $('#d-status'), kind: $('#d-kind'), kenyan: $('#d-kenyan'), from: $('#d-from'), to: $('#d-to') },
+      labels: { q: 'Search', status: 'Status', kind: 'Type', kenyan: 'Declaration', from: 'From', to: 'To' },
       defaultSort: 'pledged', exportLink: $('#d-export'), exportPath: '/api/admin/donations.csv',
       empty: { title: 'No donation pledges yet', filteredTitle: 'No matching pledges', text: 'Pledges made on the Donate page appear here.' },
     }),

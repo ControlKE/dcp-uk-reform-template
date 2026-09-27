@@ -43,3 +43,16 @@
 .tier-list { margin: 0 0 12px; padding: 0; list-style: none; font-size: 13px; color: var(--text-on-light); }
 .tier-list li { padding: 6px 0; border-top: 1px solid rgba(0, 0, 0, .08); }
 .tier-list .tier-kes { color: var(--text-on-light-muted); }
+/* Tier / payment-type choice cards on the Membership and Donate forms. */
+.tier-field { margin-bottom: 22px; }
+.tier-choice-label { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--text-on-light); }
+.tier-choices { display: grid; gap: 10px; }
+.tier-choices .tier-choice { display: flex; margin: 0; font-size: 14px; font-weight: 400; gap: 12px; align-items: flex-start; padding: 14px 16px; border: 1px solid var(--border-on-light); border-radius: var(--radius-card); background: #fff; cursor: pointer; }
+.tier-choices .tier-choice:hover { border-color: var(--accent); }
+.tier-choices .tier-choice:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--bg-light-tint); }
+.tier-choices .tier-choice:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tier-choices .tier-choice input { flex: none; width: auto; margin: 3px 0 0; padding: 0; accent-color: var(--accent); }
+.tier-choice-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.tier-choice-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; font-size: 15px; }
+.tier-price { font-size: 14px; color: var(--text-on-light); }
+.tier-price .tier-kes, .tier-desc { font-size: 13px; color: var(--text-on-light-muted); }
