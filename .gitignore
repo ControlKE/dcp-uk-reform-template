@@ -15,3 +15,8 @@ server/data/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Backups hold personal data: never commit them. The generated schema has none.
+*.sql.gz
+dcp-uk-*/
+!server/schema.sql

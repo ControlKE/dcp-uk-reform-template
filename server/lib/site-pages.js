@@ -11,6 +11,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const finance = require('./finance');
 const { escapeHtml } = require('./mailer');
+const { DEMO } = require('./demo');
 
 const money = finance.gbpText;
 const kes = (n) => `KES ${Number(n).toLocaleString('en-GB', { maximumFractionDigits: 0 })}`;
@@ -56,14 +57,33 @@ function fillTiers(html, tiers) {
   return out;
 }
 
-// Express handler that serves file from dir with the tier wording filled in.
-function tierPage(dir, file) {
+// On the demo site: a small badge in the footer, and a notice under the header on
+// pages with a form.
+const DEMO_BADGE = '<div class="container"><p class="demo-badge"><span>Demo</span> A demonstration site with sample data. Nothing entered here is kept for real use.</p></div>';
+const DEMO_NOTICE = '<div class="demo-notice" role="note"><div class="container"><strong>Demo site.</strong> Everything here is sample data and no email is sent. Please don\'t enter real personal details.</div></div>';
+function markDemo(html) {
+  let out = html.replace('</footer>', `${DEMO_BADGE}</footer>`);
+  if (/<form\b/.test(out)) out = out.replace('</header>', `</header>${DEMO_NOTICE}`);
+  return out;
+}
+
+// Serves the public site's HTML pages (friendly routes included), filling in tier
+// wording where a page has it and marking the demo site. Anything else goes on to
+// express.static.
+const ROUTES = { '/': 'index.html', '/join': 'membership.html', '/donate': 'donate.html', '/member-portal': 'member-portal.html' };
+function pages(dir) {
   return async (req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    const file = ROUTES[req.path] || (/^\/[a-z0-9-]+\.html$/.test(req.path) ? req.path.slice(1) : null);
+    if (!file) return next();
+    let html;
+    try { html = await fs.readFile(path.join(dir, file), 'utf8'); } catch { return next(); }
     try {
-      const [html, tiers] = await Promise.all([fs.readFile(path.join(dir, file), 'utf8'), finance.publicTiers()]);
-      res.set('Cache-Control', 'no-cache').type('html').send(fillTiers(html, tiers));
+      if (html.includes('data-tiers=')) html = fillTiers(html, await finance.publicTiers());
+      if (DEMO) html = markDemo(html);
+      res.set('Cache-Control', 'no-cache').type('html').send(html);
     } catch (err) { next(err); }
   };
 }
 
-module.exports = { fillTiers, tierPage };
+module.exports = { fillTiers, markDemo, pages };

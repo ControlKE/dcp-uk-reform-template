@@ -9,7 +9,10 @@
     "create-admin": "npm --prefix server run create-admin --",
     "admin:reset": "npm --prefix server run admin:reset --",
     "seed:dev": "npm --prefix server run seed:dev --",
-    "migrate": "npm --prefix server run migrate --"
+    "migrate": "npm --prefix server run migrate --",
+    "db:export-schema": "npm --prefix server run db:export-schema --",
+    "db:export-data": "npm --prefix server run db:export-data --",
+    "db:restore": "npm --prefix server run db:restore --"
   },
   "engines": {
     "node": ">=22.13"

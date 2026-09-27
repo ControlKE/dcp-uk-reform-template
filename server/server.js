@@ -19,6 +19,7 @@ const { ROLES, permissions, need, can } = require('./lib/roles');
 const { sendCsv } = require('./lib/export');
 const financeRoutes = require('./routes/finance');
 const sitePages = require('./lib/site-pages');
+const demo = require('./lib/demo');
 
 // Feature flags: switched off until the feature is built and configured.
 const FEATURES = {
@@ -263,7 +264,7 @@ adminApi.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next();
 const withPerms = (a) => (a ? { ...a, roleLabel: ROLES[a.role]?.label || a.role, perms: permissions(a.role) } : null);
 
 adminApi.get('/session', async (req, res) => {
-  res.json({ admin: withPerms(await auth.getSessionAdmin(req)) });
+  res.json({ admin: withPerms(await auth.getSessionAdmin(req)), demo: demo.DEMO });
 });
 
 adminApi.post('/login', async (req, res) => {
@@ -275,7 +276,7 @@ adminApi.post('/login', async (req, res) => {
   }
   auth.clearLoginFailures(req.ip);
   res.set('Set-Cookie', auth.sessionCookie(await auth.createSession(admin.id), req, auth.SESSION_TTL_MS));
-  res.json({ admin: withPerms({ id: admin.id, username: admin.username, role: admin.role || 'super_admin', created_at: admin.created_at }) });
+  res.json({ admin: withPerms({ id: admin.id, username: admin.username, role: admin.role || 'super_admin', created_at: admin.created_at }), demo: demo.DEMO });
 });
 
 adminApi.post('/logout', async (req, res) => {
@@ -979,21 +980,15 @@ app.use('/shared', express.static(SHARED_DIR));
 // Browsers ask for /favicon.ico on every page; answer with the DCP logo.
 app.get('/favicon.ico', (req, res) => res.type('image/png').sendFile(path.join(SITE_DIR, 'assets', 'img', 'dcp-logo.png')));
 
-// Pages that show the membership tiers get their wording from the tier table.
-app.get(['/membership.html', '/join'], sitePages.tierPage(SITE_DIR, 'membership.html'));
-app.get(['/donate.html', '/donate'], sitePages.tierPage(SITE_DIR, 'donate.html'));
-
-// Friendly URLs for the header buttons; the .html files still work too.
-const PAGE_ROUTES = { '/member-portal': 'member-portal.html' };
-for (const [route, file] of Object.entries(PAGE_ROUTES)) {
-  app.get(route, (req, res) => res.sendFile(path.join(SITE_DIR, file)));
-}
-
+// HTML pages: tier wording from the tier table, the demo badge, and the friendly
+// URLs (/join, /donate, /member-portal). Everything else is a static file.
+app.use(sitePages.pages(SITE_DIR));
 app.use(express.static(SITE_DIR));
 
 app.use((err, req, res, next) => {
   if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Invalid JSON.' });
   if (err.type === 'entity.too.large') return res.status(413).json({ error: 'Request too large.' });
+  if (err instanceof demo.DemoRefused) return res.status(403).json({ error: err.message });
   console.error(err);
   const dbDown = ['ECONNREFUSED', 'PROTOCOL_CONNECTION_LOST', 'ER_ACCESS_DENIED_ERROR'].includes(err.code);
   res.status(dbDown ? 503 : 500).json({ error: dbDown ? 'The database is not available. Please try again shortly.' : 'Something went wrong on the server.' });
@@ -1019,6 +1014,7 @@ NOT STARTING: ${err.message}
   const seeded = await auth.ensureConfiguredAdmin();
   email.startQueue();
   const mailProblems = mailer.problems();
+  const dataWarning = await demo.checkData(db, IN_PRODUCTION).catch(() => null);
   const weakAdmins = await auth.adminsWithExamplePassword();
   app.listen(PORT, HOST, () => {
     const base = `http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`;
@@ -1033,7 +1029,9 @@ NOT STARTING: ${err.message}
     }
     if (IN_PRODUCTION && !db.config.password) console.warn('WARNING: the database user has no password. Set one before going live.');
     const mc = mailer.config();
-    console.log(`Email:         ${mc.transport}${mc.transport === 'log' ? ' (stored only, nothing is delivered)' : ''}, from ${mc.from.email}`);
+    console.log(`Email:         ${mc.transport}${mc.transport === 'log' ? ' (stored only, nothing is delivered)' : ''}${mc.demo ? ', forced by DEMO_MODE' : ''}, from ${mc.from.email}`);
+    if (demo.DEMO) console.log('Mode:          DEMO (sample data only; email is never sent; real imports are refused)');
+    if (dataWarning) console.warn(`WARNING: ${dataWarning}`);
     if (mailProblems.length) {
       const bar = '!'.repeat(78);
       console.warn(`\n${bar}\n EMAIL IS NOT PROPERLY CONFIGURED\n${mailProblems.map((p) => ` - ${p}`).join('\n')}\n${bar}\n`);

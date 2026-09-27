@@ -56,7 +56,9 @@ async function init() {
     ...config,
     ssl,
     connectionLimit: 10,
-    charset: 'utf8mb4',
+    // Same collation as every table, so MySQL 8 (whose default is utf8mb4_0900_ai_ci)
+    // never has to compare strings in two collations.
+    charset: 'UTF8MB4_UNICODE_CI',
     dateStrings: true,     // DATETIME/DATE come back as 'YYYY-MM-DD HH:MM:SS' strings (UTC, see below)
     decimalNumbers: true,  // DECIMAL amounts come back as numbers
   });

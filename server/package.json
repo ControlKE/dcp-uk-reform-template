@@ -13,7 +13,10 @@
     "create-admin": "node scripts/create-admin.js",
     "admin:reset": "node scripts/admin-reset.js",
     "seed:dev": "node scripts/seed-dev.js",
-    "migrate": "node scripts/migrate.js"
+    "migrate": "node scripts/migrate.js",
+    "db:export-schema": "node scripts/db-export-schema.js",
+    "db:export-data": "node scripts/db-export-data.js",
+    "db:restore": "node scripts/db-restore.js"
   },
   "dependencies": {
     "@fontsource-variable/inter": "^5.3.0",

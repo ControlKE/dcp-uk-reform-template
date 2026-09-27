@@ -17,11 +17,13 @@ function parseAddress(value) {
 }
 
 function config() {
-  const transport = (process.env.MAIL_TRANSPORT || 'log').toLowerCase();
+  // The demo site never sends real email (see lib/demo.js).
+  const transport = process.env.DEMO_MODE === 'true' ? 'log' : (process.env.MAIL_TRANSPORT || 'log').toLowerCase();
   const port = Number(process.env.PORT) || 3000;
   return {
     transport: TRANSPORTS.includes(transport) ? transport : 'invalid',
     rawTransport: transport,
+    demo: process.env.DEMO_MODE === 'true',
     from: parseAddress(process.env.MAIL_FROM || 'DCP UK <no-reply@localhost>'),
     replyTo: (process.env.MAIL_REPLY_TO || '').trim() || null,
     ratePerMinute: Math.max(1, Math.min(600, Number(process.env.MAIL_RATE_PER_MINUTE) || 30)),
@@ -36,7 +38,7 @@ function problems() {
   const c = config();
   const out = [];
   if (c.transport === 'invalid') out.push(`MAIL_TRANSPORT="${c.rawTransport}" is not one of ${TRANSPORTS.join(', ')}. No email can be sent.`);
-  if (IN_PRODUCTION && c.transport === 'log') out.push('MAIL_TRANSPORT=log: emails are only stored, never delivered. Activation emails, receipts and replies will not reach anyone. Set MAIL_TRANSPORT to brevo, resend or smtp.');
+  if (IN_PRODUCTION && c.transport === 'log' && !c.demo) out.push('MAIL_TRANSPORT=log: emails are only stored, never delivered. Activation emails, receipts and replies will not reach anyone. Set MAIL_TRANSPORT to brevo, resend or smtp.');
   if (c.transport === 'brevo' && !process.env.BREVO_API_KEY) out.push('MAIL_TRANSPORT=brevo but BREVO_API_KEY is not set.');
   if (c.transport === 'resend' && !process.env.RESEND_API_KEY) out.push('MAIL_TRANSPORT=resend but RESEND_API_KEY is not set.');
   if (c.transport === 'smtp' && !process.env.SMTP_HOST) out.push('MAIL_TRANSPORT=smtp but SMTP_HOST is not set.');

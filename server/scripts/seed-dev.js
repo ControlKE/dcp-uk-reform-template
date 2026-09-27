@@ -10,11 +10,12 @@ const migrations = require('../lib/migrations');
 const auth = require('../lib/auth');
 const finance = require('../lib/finance');
 
-const SEED_DOMAIN = 'seed.example';
+const { DEMO, SEED_DOMAIN } = require('../lib/demo');
 const LOCAL_HOSTS = ['127.0.0.1', 'localhost', '::1'];
 
-if (process.env.NODE_ENV === 'production' || !LOCAL_HOSTS.includes(db.config.host)) {
-  console.error(`Refusing to seed: NODE_ENV=${process.env.NODE_ENV || '(unset)'}, database host ${db.config.host}. Seeding is for local development only.`);
+// Local development, or the demo environment (DEMO_MODE=true). Never production.
+if (!DEMO && (process.env.NODE_ENV === 'production' || !LOCAL_HOSTS.includes(db.config.host))) {
+  console.error(`Refusing to seed: NODE_ENV=${process.env.NODE_ENV || '(unset)'}, database host ${db.config.host}, DEMO_MODE off. Seeding is for local development and the demo environment only.`);
   process.exit(1);
 }
 

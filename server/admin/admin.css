@@ -976,3 +976,6 @@ button.adm-earn-tab.selected { border-color: var(--adm-link); background: var(--
 /* Longer status badges (e.g. "Stakeholder: awaiting approval") wrap in narrow columns. */
 .adm-badge.adm-badge-wrap { white-space: normal; align-items: flex-start; }
 .adm-badge.adm-badge-wrap::before { flex: none; margin-top: 6px; }
+/* DEMO_MODE badge next to the breadcrumb. */
+.adm-demo { margin-left: 8px; padding: 0 8px; border: 1px solid var(--adm-warning-fg); border-radius: 999px; color: var(--adm-warning-fg); font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.adm-demo[hidden] { display: none; }

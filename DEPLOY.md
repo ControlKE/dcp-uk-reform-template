@@ -79,12 +79,12 @@ When a deploy fails with *"NOT STARTING: Database … needs N migration(s)"*:
 
 1. **Back up the live database.**
    - Railway → the **MySQL** service → **Variables** → copy `MYSQL_PUBLIC_URL`. It contains the host, port, user, password and database name.
-   - On your PC, with the `mysqldump` that comes with XAMPP/WAMP:
+   - From your PC in this repo (no `mysqldump` needed):
      ```
-     mysqldump --single-transaction --no-tablespaces -h <host> -P <port> -u <user> -p <database> > dcp-uk-backup-YYYY-MM-DD.sql
+     set DATABASE_URL=<the MYSQL_PUBLIC_URL value>      (PowerShell: $env:DATABASE_URL="…")
+     npm run db:export-data -- --out dcp-uk-backup-YYYY-MM-DD.sql.gz
      ```
-     Enter the password when asked.
-   - Check the file isn't empty and contains ``CREATE TABLE `members` ``.
+     It prints the row count of every table; check `members` looks right.
    - It holds members' personal data, including ID numbers. Store it encrypted or somewhere access-controlled, and delete old copies you no longer need.
 2. **See what will change**, from your PC in this repo (at the version you are deploying):
    ```
@@ -95,7 +95,7 @@ When a deploy fails with *"NOT STARTING: Database … needs N migration(s)"*:
 3. **Apply them:** `npm run migrate -- --yes`. Then redeploy on Railway (Deployments → the failed one → Redeploy).
    Alternatively, after the backup, set `AUTO_MIGRATE=true`, redeploy, and delete the variable once it's up.
 
-To restore a backup: `mysql -h <host> -P <port> -u <user> -p <database> < dcp-uk-backup-YYYY-MM-DD.sql`.
+To restore a backup: `npm run db:restore -- --file dcp-uk-backup-YYYY-MM-DD.sql.gz --replace --confirm <database>` (same `DATABASE_URL`), or phpMyAdmin → Import.
 
 ---
 

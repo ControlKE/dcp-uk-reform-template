@@ -128,12 +128,13 @@
 
   async function boot() {
     const s = await api('GET', '/api/admin/session');
-    if (s.admin) return enterApp(s.admin);
+    if (s.admin) return enterApp(s.admin, s.demo);
     showView('login');
   }
 
-  function enterApp(admin) {
+  function enterApp(admin, demo) {
     me = admin;
+    $('#adm-demo').hidden = !demo;
     applyPerms();
     $('#adm-role-2').textContent = admin.roleLabel || 'Administrator';
     $('#pf-role').textContent = admin.roleLabel || 'Administrator';
@@ -167,9 +168,9 @@
     const firstBad = [user, pass].find((i) => i.getAttribute('aria-invalid') === 'true');
     if (firstBad) { firstBad.focus(); return; }
     try {
-      const { admin } = await busy(f, () => api('POST', '/api/admin/login', formValues(f)));
+      const { admin, demo } = await busy(f, () => api('POST', '/api/admin/login', formValues(f)));
       f.reset(); alertIn(f, '');
-      enterApp(admin);
+      enterApp(admin, demo);
     } catch (err) { alertIn(f, err.message); pass.select(); }
   });
   ['#l-user', '#l-pass'].forEach((s) => $(s).addEventListener('input', (e) => fieldError(e.currentTarget, '')));

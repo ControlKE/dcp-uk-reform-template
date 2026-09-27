@@ -45,7 +45,24 @@ In VS Code you can press **F5** instead and pick **DCP UK: site + backend**.
 
 Schema changes are numbered files in `server/migrations`. Locally they apply automatically when the server starts. `npm run migrate` shows what is pending without changing anything; `npm run migrate -- --yes` applies it. In production nothing is applied without that command (or `AUTO_MIGRATE=true`), so there is always a chance to back up first. See DEPLOY.md, "Database changes".
 
-`npm run seed:dev` fills a local database with fake members and pledges (`-- --reset` removes them). It refuses to run in production.
+`npm run seed:dev` fills a local database with fake members and pledges (`-- --reset` removes them). It runs only locally or where `DEMO_MODE=true`, never in production.
+
+## Database: supported versions, schema, backups
+
+- **Supported:** MariaDB 10.6+ and MySQL 8.0+. The whole test suite, a `schema.sql` import and a concurrent receipt-numbering test pass on MariaDB 10.6 and MySQL 8.0 (including MySQL's `ONLY_FULL_GROUP_BY`); development uses MariaDB 10.10. MySQL 5.7 is end-of-life and not supported. Every table and the connection use `utf8mb4` / `utf8mb4_unicode_ci`.
+- **`server/schema.sql`**: every table plus the rows a fresh install needs (tiers, email labels, the migrations already applied), with no personal data. Import it into an empty database with phpMyAdmin, or let the app run its migrations; the result is the same. It is generated from the migrations: run `npm run db:export-schema` after adding a migration (`-- --check` tells you if it is out of date).
+- **`npm run db:export-data`**: a full backup (structure and data) as `.sql.gz`, written in Node, so it works on Railway too and needs no `mysqldump`. phpMyAdmin imports it directly. `-- --per-table --out <dir>` writes one file per table for hosts with a small import limit. The file holds personal data: keep it private.
+- **`npm run db:restore -- --file <backup>`**: restores a backup. `--database <name> --drop-after` restores into a scratch database, prints the row counts and drops it: that is the monthly restore test (DEPLOY.md). Replacing the app's own database needs `--replace`, and in production also `--confirm <database name>`.
+
+## Demo mode
+
+`DEMO_MODE=true` marks a demonstration copy (the Railway "demo" environment):
+- a small **Demo** badge in the admin and the site footer, and a notice above the public forms asking people not to enter real details;
+- email is forced to `log` whatever `MAIL_TRANSPORT` says, so nothing is ever delivered;
+- `npm run seed:dev` is allowed there, even though the database is hosted;
+- real imports are refused (member import, when it arrives, checks `lib/demo.js`).
+
+At startup the app warns if a demo database holds anyone who isn't seed data, or a production database holds seed data. Demo and production never share a database, and nothing is copied from one to the other.
 
 ## Email
 
