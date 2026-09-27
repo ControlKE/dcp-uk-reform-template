@@ -62,6 +62,10 @@ async function seed() {
       town, postcode, payment, payment !== 'pending_payment' ? `Q${crypto.randomBytes(4).toString('hex').toUpperCase()}` : null,
       status, sqlTime(created), sqlTime(created),
     ]);
+    // Most seeded members agreed to their data being processed; about 60% also
+    // ticked "Email me chapter news" (the only consent bulk email uses).
+    await db.query(`UPDATE members SET data_consent_at = created_at, marketing_consent_at = IF(RAND() < 0.6, created_at, NULL) WHERE email = ?`,
+      [`${first}.${last}.${i}@${SEED_DOMAIN}`.toLowerCase()]);
   }
   const donations = 70;
   for (let i = 0; i < donations; i++) {

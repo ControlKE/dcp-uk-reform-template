@@ -134,8 +134,8 @@ app.post('/api/members', submissionLimit, async (req, res) => {
     orNull(m.chapter), orNull(m.chapterOther),
     m.addressLine1, orNull(m.addressLine2), m.town, orNull(m.county), m.postcode, feeAccount.feeAmount, feeAccount.feeCurrency]);
   const created = await db.one('SELECT id FROM members WHERE reference = ?', [reference]);
-  // The form requires the data-consent declaration (validateMember).
-  await db.query('UPDATE members SET data_consent_at = UTC_TIMESTAMP() WHERE id = ?', [created.id]);
+  // The form requires the data-consent declaration (validateMember); chapter news is optional.
+  await db.query(`UPDATE members SET data_consent_at = UTC_TIMESTAMP(), marketing_consent_at = ${m.marketingConsent ? 'UTC_TIMESTAMP()' : 'NULL'} WHERE id = ?`, [created.id]);
   await email.receive({
     source: 'application', fromName: m.fullName, fromEmail: m.email, memberId: created.id, labels: ['Membership'],
     subject: `New membership application: ${m.fullName}`,
@@ -327,7 +327,7 @@ adminApi.get('/members/lookup', async (req, res) => {
   const q = String(req.query.q || '').trim();
   if (q.length < 2) return res.json({ members: [] });
   const like = likeParam(q);
-  res.json({ members: await db.query(`SELECT id, full_name, email, chapter, data_consent_at IS NOT NULL AS consent, email_opt_out AS opted_out
+  res.json({ members: await db.query(`SELECT id, full_name, email, chapter, marketing_consent_at IS NOT NULL AS consent, email_opt_out AS opted_out
     FROM members WHERE full_name LIKE ? OR email LIKE ? OR reference LIKE ? ORDER BY full_name LIMIT 8`, [like, like, like]) });
 });
 

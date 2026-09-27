@@ -90,6 +90,8 @@ function validateMember(body) {
 
   const declarations = b.declarations || {};
   if (!DECLARATIONS.every((k) => declarations[k] === true)) fail('declarations', 'Please confirm every declaration to continue.');
+  // Optional and unticked by default: agreement to receive chapter news (bulk email).
+  m.marketingConsent = b.marketingConsent === true;
 
   return { value: m, errors };
 }

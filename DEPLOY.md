@@ -112,7 +112,7 @@ The admin's Email app sends through one of four transports, chosen by `MAIL_TRAN
 
 Also set `MAIL_FROM` (e.g. `DCP UK <no-reply@dcpuk.org.uk>`), `MAIL_REPLY_TO` (a real chapter inbox for replies), and on Brevo's free plan `MAIL_DAILY_LIMIT=300`. Mail over the limit waits in the queue until the next day, and transactional mail such as activation emails always goes first.
 
-**Who gets what.** A message to one person (a reply, a receipt, an activation) is *transactional* and always allowed. A message to a segment or to more than one member is *bulk*. Bulk only goes to members with data consent recorded who haven't unsubscribed. Each copy carries a signed unsubscribe link and the `List-Unsubscribe` / one-click headers. Compose shows how many people are excluded before you send.
+**Who gets what.** A message to one person (a reply, a receipt, an activation) is *transactional* and always allowed. A message to a segment or to more than one member is *bulk*. Bulk only goes to members who ticked "Email me chapter news and updates" (at registration, or later in the member portal) and haven't unsubscribed. Nobody is opted in on their behalf, and there is no "please opt in" mailing: existing members give consent through the portal. Each copy carries a signed unsubscribe link and the `List-Unsubscribe` / one-click headers. Compose shows how many people are excluded before you send.
 
 ### Why Brevo
 

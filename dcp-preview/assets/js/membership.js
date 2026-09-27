@@ -65,7 +65,8 @@
       if (!el.value.trim()) errors[el.name] = 'This field is required.';
       else if (el.type === 'email' && !el.checkValidity()) errors[el.name] = 'Enter a valid email address.';
     });
-    if (n === 3 && [...panel.querySelectorAll('input[type="checkbox"]')].some((c) => !c.checked)) {
+    // Only the declarations are required; the chapter-news box is optional.
+    if (n === 3 && [...panel.querySelectorAll('[data-field="declarations"] input[type="checkbox"]')].some((c) => !c.checked)) {
       errors.declarations = 'Please confirm every declaration to continue.';
     }
     return errors;
@@ -74,7 +75,7 @@
   function collect() {
     const data = Object.fromEntries(new FormData(form));
     const declarations = {};
-    form.querySelectorAll('[data-step="3"] input[type="checkbox"]').forEach((c) => { declarations[c.name] = c.checked; });
+    form.querySelectorAll('[data-field="declarations"] input[type="checkbox"]').forEach((c) => { declarations[c.name] = c.checked; });
     return {
       fullName: data.fullName, phone: data.phone, email: data.email, dateOfBirth: data.dateOfBirth,
       idDocumentType: data.idDocumentType, idDocumentNumber: data.idDocumentNumber, language: data.language,
@@ -83,6 +84,7 @@
       chapter: data.chapter, chapterOther: data.chapterOther,
       addressLine1: data.addressLine1, addressLine2: data.addressLine2, town: data.town,
       county: data.county, postcode: data.postcode, declarations,
+      marketingConsent: form.elements.marketingConsent.checked,
     };
   }
 

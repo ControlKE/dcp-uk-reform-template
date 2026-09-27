@@ -3,8 +3,9 @@
 // Two kinds of outgoing email:
 //   transactional  one person (plus optional Cc/Bcc): replies, receipts,
 //                  activation, a note to one member. Always allowed.
-//   bulk           a segment, or more than one member in To. Only members with
-//                  data consent recorded who have not opted out; each copy is
+//   bulk           a segment, or more than one member in To. Only members who
+//                  agreed to chapter news (marketing_consent_at, collected at
+//                  registration or in the portal) and have not unsubscribed; each copy is
 //                  personalised and carries a signed unsubscribe link plus the
 //                  List-Unsubscribe headers. Sent through the throttled queue.
 const sanitizeHtml = require('sanitize-html');
@@ -37,7 +38,10 @@ function cleanHtml(html) {
 }
 
 const normAddress = (a) => String(a || '').trim().toLowerCase();
-const MEMBER_FIELDS = 'id, full_name, email, reference, chapter, data_consent_at, email_opt_out';
+const MEMBER_FIELDS = 'id, full_name, email, reference, chapter, marketing_consent_at, email_opt_out';
+
+// The one place that decides who may receive bulk email.
+const canReceiveBulk = (m) => Boolean(m && m.marketing_consent_at && !m.email_opt_out);
 
 // Works out who a message goes to, applying the consent rules.
 async function resolveAudience({ to = [], segments = [], cc = [], bcc = [] }) {
@@ -68,12 +72,12 @@ async function resolveAudience({ to = [], segments = [], cc = [], bcc = [] }) {
   let duplicate = 0;
   members = members.filter((m) => { const k = normAddress(m.email); if (seen.has(k)) { duplicate++; return false; } seen.add(k); return true; });
 
-  const excluded = { noConsent: 0, optedOut: 0, notMember: 0 };
+  const excluded = { noMarketingConsent: 0, optedOut: 0, notMember: 0 };
   const recipients = [];
   if (bulk) {
     for (const m of members) {
       if (m.email_opt_out) excluded.optedOut++;
-      else if (!m.data_consent_at) excluded.noConsent++;
+      else if (!canReceiveBulk(m)) excluded.noMarketingConsent++;
       else recipients.push({ kind: 'to', address: normAddress(m.email), name: m.full_name, memberId: m.id });
     }
     excluded.notMember = addresses.filter((a) => !seen.has(a.address)).length; // bulk goes to members only
@@ -95,7 +99,7 @@ async function resolveAudience({ to = [], segments = [], cc = [], bcc = [] }) {
   return {
     category: bulk ? 'bulk' : 'transactional',
     recipients, excluded, duplicate,
-    excludedTotal: excluded.noConsent + excluded.optedOut + excluded.notMember,
+    excludedTotal: excluded.noMarketingConsent + excluded.optedOut + excluded.notMember,
     summary: summary.slice(0, 500), errors,
     segments: segs,
   };
@@ -104,7 +108,7 @@ async function resolveAudience({ to = [], segments = [], cc = [], bcc = [] }) {
 // Queues an outgoing email. Returns the new email id.
 async function createOutgoing({ admin, audience, subject, html, template, attachmentIds = [], inReplyTo = null, source = 'compose', draftId = null }) {
   if (audience.errors.length) throw new EmailError(audience.errors[0]);
-  if (!audience.recipients.some((r) => r.kind === 'to')) throw new EmailError(audience.category === 'bulk' ? 'Nobody in this audience can receive bulk email (no consent recorded, or opted out).' : 'Add a recipient.');
+  if (!audience.recipients.some((r) => r.kind === 'to')) throw new EmailError(audience.category === 'bulk' ? 'Nobody in this audience can receive chapter news: none of them agreed to it, or they unsubscribed.' : 'Add a recipient.');
   if (!String(subject || '').trim()) throw new EmailError('Add a subject.');
   const body = cleanHtml(html);
   if (!mailer.htmlToText(body).trim()) throw new EmailError('Write a message.');
@@ -200,10 +204,10 @@ async function deliver(emailId, recipientIds) {
   const idList = ids.map(() => '?').join(',');
   if (bulk && lead.member_id) {
     // Consent is checked again at send time: someone may have unsubscribed after queueing.
-    const m = await db.one('SELECT data_consent_at, email_opt_out FROM members WHERE id = ?', [lead.member_id]);
-    if (!m || m.email_opt_out || !m.data_consent_at) {
+    const m = await db.one('SELECT marketing_consent_at, email_opt_out FROM members WHERE id = ?', [lead.member_id]);
+    if (!canReceiveBulk(m)) {
       await db.query(`UPDATE email_recipients SET status = 'skipped', last_error = ? WHERE id IN (${idList})`,
-        [!m ? 'Member no longer exists.' : m.email_opt_out ? 'Unsubscribed before this was sent.' : 'No data consent recorded.', ...ids]);
+        [!m ? 'Member no longer exists.' : m.email_opt_out ? 'Unsubscribed before this was sent.' : 'Has not agreed to chapter news.', ...ids]);
       await refreshStatus(emailId);
       return;
     }
@@ -281,5 +285,5 @@ function startQueue(intervalMs = 3000) {
 
 module.exports = {
   EMAIL_RE, FOLDERS, SEGMENTS, MAX_ATTACHMENT, MAX_ATTACHMENTS_PER_EMAIL, EmailError,
-  cleanHtml, resolveAudience, createOutgoing, receive, startQueue, kick, tick,
+  cleanHtml, resolveAudience, canReceiveBulk, createOutgoing, receive, startQueue, kick, tick,
 };

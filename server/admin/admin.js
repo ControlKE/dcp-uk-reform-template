@@ -1384,7 +1384,7 @@
       const totals = d.recipientTotals || {};
       const recipientList = outbound && d.recipients.length ? el('details', { class: 'adm-mail-recipients', ...(totals.failed ? { open: '' } : {}) },
         el('summary', {}, `Delivery: ${Object.entries(totals).map(([k, n]) => `${n} ${(RECIPIENT_STATUS[k] || [k])[0].toLowerCase()}`).join(', ')}`,
-          e.excluded_count ? ` · ${e.excluded_count} excluded before sending (no consent or unsubscribed)` : ''),
+          e.excluded_count ? ` · ${e.excluded_count} excluded before sending (no chapter-news consent, or unsubscribed)` : ''),
         el('ul', {}, ...d.recipients.map((r) => el('li', {},
           el('span', { class: 'adm-break', text: `${r.kind !== 'to' ? `${r.kind.toUpperCase()}: ` : ''}${r.name ? `${r.name} <${r.address}>` : r.address}` }),
           badge(RECIPIENT_STATUS[r.status] || [r.status, '']),
@@ -1528,7 +1528,7 @@
       else if (a.category === 'bulk') {
         parts.push(icon('users'), el('span', {}, el('strong', { text: `Bulk email to ${a.recipients} member${a.recipients === 1 ? '' : 's'}.` }), ' Each copy is personalised and has an unsubscribe link.'));
         const ex = [];
-        if (a.excluded.noConsent) ex.push(`${a.excluded.noConsent} without data consent`);
+        if (a.excluded.noMarketingConsent) ex.push(`${a.excluded.noMarketingConsent} haven't agreed to chapter news`);
         if (a.excluded.optedOut) ex.push(`${a.excluded.optedOut} unsubscribed`);
         if (a.excluded.notMember) ex.push(`${a.excluded.notMember} non-member address${a.excluded.notMember === 1 ? '' : 'es'} (bulk email goes to members only)`);
         if (ex.length) parts.push(el('span', { class: 'adm-cp-excluded', text: `${a.excludedTotal} excluded: ${ex.join(', ')}.` }));
@@ -1566,7 +1566,7 @@
         class: 'adm-gsearch-item', role: 'option', id: `cp-opt-${i}`, 'aria-selected': 'false', onmousedown: (ev) => { ev.preventDefault(); choose(i); },
       }, icon(o.type === 'member' ? 'user' : 'mail'), el('div', {},
         el('strong', { text: o.type === 'member' ? o.label : `Send to ${o.address}` }),
-        el('span', { text: o.type === 'member' ? `${o.email}${o.optedOut ? ' · unsubscribed from bulk' : !o.consent ? ' · no data consent (one-to-one only)' : ''}` : 'Not a member: one-to-one messages only' })))) : [el('p', { class: 'adm-gsearch-empty', text: 'No matching members. Type a full email address to send to someone else.' })]));
+        el('span', { text: o.type === 'member' ? `${o.email}${o.optedOut ? ' · unsubscribed from chapter news' : !o.consent ? ' · no chapter-news consent (one-to-one only)' : ''}` : 'Not a member: one-to-one messages only' })))) : [el('p', { class: 'adm-gsearch-empty', text: 'No matching members. Type a full email address to send to someone else.' })]));
       suggest.hidden = false;
       toInput.setAttribute('aria-expanded', 'true');
       active = options.length ? 0 : -1;

@@ -91,7 +91,7 @@ function htmlToText(html) {
 function layout({ bodyHtml, category, unsubscribe }) {
   const c = config();
   const footer = category === 'bulk'
-    ? `You are receiving this because you are a registered DCP UK member and agreed to your details being used by the chapter.<br>
+    ? `You are receiving this because you are a DCP UK member and asked to receive chapter news.<br>
        <a href="${escapeHtml(unsubscribe)}" style="color:#4b5f52">Unsubscribe from chapter emails</a>. You will still receive messages about your own membership, such as receipts.`
     : 'This is a service message about your contact with DCP UK. It is not a newsletter.';
   const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f3f8f1;font-family:Arial,Helvetica,sans-serif;color:#14201a">
