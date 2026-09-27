@@ -8,6 +8,7 @@ const db = require('./lib/db'); // loads server/.env
 const auth = require('./lib/auth');
 const settings = require('./lib/settings');
 const { validateMember, validateDonation } = require('./lib/validate');
+const { pageParams, paged, dateRange } = require('./lib/paging');
 
 const PORT = Number(process.env.PORT) || 3000;
 const IN_PRODUCTION = process.env.NODE_ENV === 'production';
@@ -205,8 +206,16 @@ adminApi.post('/admins', async (req, res) => {
   res.status(201).json({ ok: true });
 });
 
+const ADMIN_SORTS = { username: 'username', created: 'created_at' };
 adminApi.get('/admins', async (req, res) => {
-  res.json({ admins: await db.query('SELECT id, username, created_at FROM admins ORDER BY username') });
+  const where = [];
+  const params = [];
+  if (req.query.q) { where.push('username LIKE ?'); params.push(likeParam(req.query.q)); }
+  const { rows, ...page } = await paged(db, {
+    select: 'id, username, created_at', from: 'admins', where, params,
+    p: pageParams(req.query, ADMIN_SORTS, 'username', 'asc'), tiebreak: 'id',
+  });
+  res.json({ admins: rows, ...page });
 });
 
 // ---------------------------------------------------------------- admin: payment accounts
@@ -243,7 +252,13 @@ const MEMBER_COLUMNS = `
   m.admin_notes, m.created_at, m.updated_at,
   (SELECT COUNT(*) FROM members d WHERE d.id <> m.id AND (d.id_document_number = m.id_document_number OR d.email = m.email)) AS possible_duplicates`;
 
-async function memberQuery(q) {
+// Sortable columns for ?sort= (keys are what the admin table sends).
+const MEMBER_SORTS = {
+  reference: 'm.reference', name: 'm.full_name', email: 'm.email', chapter: 'm.chapter',
+  registered: 'm.created_at', payment: 'm.payment_status', status: 'm.status',
+};
+
+function memberFilters(q) {
   const where = [];
   const params = [];
   if (MEMBER_STATUSES.includes(q.status)) { where.push('m.status = ?'); params.push(q.status); }
@@ -254,8 +269,15 @@ async function memberQuery(q) {
     where.push('(m.full_name LIKE ? OR m.email LIKE ? OR m.reference LIKE ? OR m.phone LIKE ? OR m.id_document_number LIKE ? OR m.postcode LIKE ?)');
     params.push(like, like, like, like, like, like);
   }
-  const sql = `SELECT ${MEMBER_COLUMNS} FROM members m ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY m.created_at DESC, m.id DESC`;
-  return db.query(sql, params);
+  dateRange(q, 'm.created_at', where, params);
+  return { where, params };
+}
+
+// Every matching member, in the table's sort order (for CSV export).
+async function memberQuery(q) {
+  const { where, params } = memberFilters(q);
+  const p = pageParams(q, MEMBER_SORTS, 'registered');
+  return db.query(`SELECT ${MEMBER_COLUMNS} FROM members m ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY ${p.orderBy}, m.id DESC`, params);
 }
 
 const getMember = (id) => db.one(`SELECT ${MEMBER_COLUMNS} FROM members m WHERE m.id = ?`, [Number(id) || 0]);
@@ -272,7 +294,14 @@ adminApi.get('/stats', async (req, res) => {
   });
 });
 
-adminApi.get('/members', async (req, res) => res.json({ members: await memberQuery(req.query) }));
+adminApi.get('/members', async (req, res) => {
+  const { where, params } = memberFilters(req.query);
+  const { rows, ...page } = await paged(db, {
+    select: MEMBER_COLUMNS, from: 'members m', where, params,
+    p: pageParams(req.query, MEMBER_SORTS, 'registered'), tiebreak: 'm.id DESC',
+  });
+  res.json({ members: rows, ...page });
+});
 
 adminApi.get('/members.csv', async (req, res) => {
   sendCsv(res, `dcp-uk-members-${new Date().toISOString().slice(0, 10)}.csv`, [
@@ -322,7 +351,9 @@ adminApi.delete('/members/:id', async (req, res) => {
 
 const DONATION_STATUSES = ['pledged', 'received', 'cancelled'];
 
-async function donationQuery(q) {
+const DONATION_SORTS = { reference: 'reference', donor: 'full_name', amount: 'amount_gbp', pledged: 'created_at', status: 'status' };
+
+function donationFilters(q) {
   const where = [];
   const params = [];
   if (DONATION_STATUSES.includes(q.status)) { where.push('status = ?'); params.push(q.status); }
@@ -331,10 +362,25 @@ async function donationQuery(q) {
     where.push('(full_name LIKE ? OR email LIKE ? OR reference LIKE ?)');
     params.push(like, like, like);
   }
-  return db.query(`SELECT * FROM donations ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY created_at DESC, id DESC`, params);
+  dateRange(q, 'created_at', where, params);
+  return { where, params };
 }
 
-adminApi.get('/donations', async (req, res) => res.json({ donations: await donationQuery(req.query) }));
+// Every matching donation, in the table's sort order (for CSV export).
+async function donationQuery(q) {
+  const { where, params } = donationFilters(q);
+  const p = pageParams(q, DONATION_SORTS, 'pledged');
+  return db.query(`SELECT * FROM donations ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY ${p.orderBy}, id DESC`, params);
+}
+
+adminApi.get('/donations', async (req, res) => {
+  const { where, params } = donationFilters(req.query);
+  const { rows, ...page } = await paged(db, {
+    select: '*', from: 'donations', where, params,
+    p: pageParams(req.query, DONATION_SORTS, 'pledged'), tiebreak: 'id DESC',
+  });
+  res.json({ donations: rows, ...page });
+});
 
 adminApi.get('/donations.csv', async (req, res) => {
   sendCsv(res, `dcp-uk-donations-${new Date().toISOString().slice(0, 10)}.csv`, [

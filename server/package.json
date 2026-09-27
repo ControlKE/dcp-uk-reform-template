@@ -11,7 +11,8 @@
   "scripts": {
     "start": "node server.js",
     "create-admin": "node scripts/create-admin.js",
-    "admin:reset": "node scripts/admin-reset.js"
+    "admin:reset": "node scripts/admin-reset.js",
+    "seed:dev": "node scripts/seed-dev.js"
   },
   "dependencies": {
     "express": "^5.1.0",

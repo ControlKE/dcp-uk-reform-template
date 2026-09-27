@@ -8,7 +8,6 @@
   const STATUS_LABELS = { pending: ['Pending', 'warn'], approved: ['Approved', 'good'], rejected: ['Rejected', 'bad'] };
   const DONATION_LABELS = { pledged: ['Pledged', 'warn'], received: ['Received', 'good'], cancelled: ['Cancelled', ''] };
   const TAB_TITLES = { overview: 'Overview', members: 'Members', donations: 'Donations', accounts: 'Payment accounts', users: 'Admin users' };
-  const PAGE_SIZE = 25;
 
   // ------------------------------------------------------------ helpers
 
@@ -78,6 +77,12 @@
     return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
 
+  // Date only, for table cells (the full time goes in the tooltip).
+  function day(sqlDate) {
+    if (!sqlDate) return '';
+    return new Date(sqlDate.replace(' ', 'T') + 'Z').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
   const money = (n, currency = 'GBP') => new Intl.NumberFormat('en-GB', {
     style: 'currency', currency, minimumFractionDigits: Number.isInteger(Number(n)) ? 0 : 2,
   }).format(Number(n));
@@ -133,7 +138,9 @@
     $('#adm-avatar').textContent = initials(admin.username);
     $('#adm-avatar-2').textContent = initials(admin.username);
     showView('app');
-    openTab(location.hash.slice(1) || 'overview');
+    refreshBadges();
+    const { name, params } = parseHash();
+    openTab(name, params, { push: false });
   }
 
   function fieldError(input, message) {
@@ -233,7 +240,8 @@
   document.addEventListener('click', (e) => { if (!e.target.closest('.adm-user')) closeUserMenu(); });
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    if (!userMenu.hidden) closeUserMenu(true);
+    if (openRowMenu) closeRowMenu(true);
+    else if (!userMenu.hidden) closeUserMenu(true);
     else if (sidebar.classList.contains('open')) closeDrawer();
   });
   $('#adm-change-password').addEventListener('click', () => {
@@ -242,12 +250,36 @@
     $('#p-cur').focus();
   });
 
-  // ------------------------------------------------------------ tabs
+  // ------------------------------------------------------------ tabs & URL
 
-  const loaders = { overview: loadOverview, members: loadMembers, donations: loadDonations, accounts: loadAccounts, users: loadUsers };
+  // The hash holds the section and its table state: #members?status=pending&page=2
+  const loaders = {
+    overview: () => loadOverview(),
+    members: () => tables.members.load(),
+    donations: () => tables.donations.load(),
+    accounts: () => loadAccounts(),
+    users: () => tables.users.load(),
+  };
+  let currentTab = null;
 
-  function openTab(name) {
+  function parseHash() {
+    const h = location.hash.slice(1);
+    const i = h.indexOf('?');
+    return { name: (i < 0 ? h : h.slice(0, i)) || 'overview', params: new URLSearchParams(i < 0 ? '' : h.slice(i + 1)) };
+  }
+
+  // Called by a table when its filters, page or sort change.
+  function setTabUrl(name, params, replace) {
+    if (name !== currentTab) return;
+    const qs = params.toString();
+    const url = `#${name}${qs ? '?' + qs : ''}`;
+    if (url !== location.hash) history[replace ? 'replaceState' : 'pushState'](null, '', url);
+  }
+
+  function openTab(name, params, { push = true } = {}) {
     if (!loaders[name]) name = 'overview';
+    currentTab = name;
+    closeRowMenu();
     $$('.tabs [data-tab]').forEach((b) => {
       const on = b.dataset.tab === name;
       b.classList.toggle('selected', on);
@@ -257,27 +289,37 @@
     $('#adm-title').textContent = TAB_TITLES[name];
     $('#adm-crumb').textContent = TAB_TITLES[name];
     document.title = `${TAB_TITLES[name]} · DCP UK Admin`;
-    history.replaceState(null, '', `#${name}`);
+    const table = tables[name];
+    if (table && params) table.setFromParams(params);
+    const qs = table ? table.params().toString() : '';
+    const url = `#${name}${qs ? '?' + qs : ''}`;
+    if (url !== location.hash) history[push ? 'pushState' : 'replaceState'](null, '', url);
     closeDrawer(false);
     loaders[name]().catch((err) => { console.error(err); toast(err.message, 'error'); });
   }
   $$('.tabs [data-tab]').forEach((b) => b.addEventListener('click', () => openTab(b.dataset.tab)));
 
-  // Opens the Members list with the given filters.
-  function showMembers(filters = {}) {
-    $('#m-search').value = '';
-    $('#m-status').value = filters.status || '';
-    $('#m-payment').value = filters.payment || '';
-    $('#m-chapter').value = '';
-    openTab('members');
-  }
-  function showDonations(status = '') {
-    $('#d-search').value = '';
-    $('#d-status').value = status;
-    openTab('donations');
-  }
+  // Back / forward between sections, pages and filter states.
+  window.addEventListener('popstate', () => {
+    if ($('#view-app').hidden) return;
+    const { name, params } = parseHash();
+    openTab(name, params, { push: false });
+  });
+
+  // Opens a list with the given filters (and nothing else).
+  const showMembers = (filters = {}) => openTab('members', new URLSearchParams(filters));
+  const showDonations = (status = '') => openTab('donations', new URLSearchParams(status ? { status } : {}));
 
   // ------------------------------------------------------------ overview
+
+  function setNavBadges(s) {
+    const navBadge = $('#nav-badge-members');
+    navBadge.textContent = String(s.membersPending);
+    navBadge.hidden = !s.membersPending;
+    navBadge.setAttribute('aria-label', `${s.membersPending} awaiting review`);
+  }
+  // Keeps sidebar counts current whichever section is open.
+  const refreshBadges = () => api('GET', '/api/admin/stats').then(setNavBadges).catch(() => {});
 
   async function loadOverview() {
     $('#stats').replaceChildren(...Array.from({ length: 4 }, () => el('div', { class: 'adm-stat', 'aria-hidden': 'true' },
@@ -301,10 +343,7 @@
       card({ n: gbp(s.donationsReceivedGbp), label: 'Donations received', sub: `${plural(s.donationsPledged, 'pledge')} awaiting transfer`, iconName: 'heart', tone: 'danger', go: () => showDonations() }),
     );
 
-    const navBadge = $('#nav-badge-members');
-    navBadge.textContent = String(s.membersPending);
-    navBadge.hidden = !s.membersPending;
-    navBadge.setAttribute('aria-label', `${s.membersPending} awaiting review`);
+    setNavBadges(s);
 
     const attention = [
       { n: s.membersPending, title: 'Review new applications', text: 'Approve or reject pending registrations.', iconName: 'clock', tone: 'warning', go: () => showMembers({ status: 'pending' }) },
@@ -328,10 +367,16 @@
       iconButton('x', 'Dismiss reminder', () => { reminder.hidden = true; store.session(dismissKey, '1'); }));
   }
 
-  // ------------------------------------------------------------ tables: shared bits
+  // ------------------------------------------------------------ tables: server-side paging, sorting, filters
+
+  // Every list uses one controller. Its filter inputs hold the state; their
+  // values, plus page, size and sort, go to the API and into the URL hash
+  // (e.g. #members?status=pending&page=2), so Back and bookmarks work.
+  const PAGE_SIZES = [10, 25, 50, 100];
+  const DEFAULT_PAGE_SIZE = 25;
 
   function skeletonRows(body, cols) {
-    body.replaceChildren(...Array.from({ length: 5 }, () => el('tr', { 'aria-hidden': 'true' },
+    body.replaceChildren(...Array.from({ length: 6 }, () => el('tr', { 'aria-hidden': 'true', class: 'adm-skel-row' },
       ...Array.from({ length: cols }, (_, i) => el('td', {}, el('span', { class: 'adm-skel', style: `width:${[70, 85, 90, 55, 65, 50, 50, 30][i] || 60}%` }))))));
   }
 
@@ -340,79 +385,255 @@
       el('div', { class: 'adm-empty-inner' }, el('span', { class: 'adm-tile adm-tone-primary' }, icon('inbox')), el('strong', { text: title }), el('span', { text: text })))));
   }
 
-  // Client-side paging over the rows the API returned.
-  function pager(root, total, page, onChange) {
-    const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-    if (pages === 1) { root.replaceChildren(); return; }
-    const prev = iconButton('chevron-left', 'Previous page', () => onChange(page - 1));
-    const next = iconButton('chevron-right', 'Next page', () => onChange(page + 1));
-    prev.disabled = page <= 1;
-    next.disabled = page >= pages;
-    root.replaceChildren(prev, el('span', { class: 'adm-pager-label', text: `Page ${page} of ${pages}` }), next);
+  // Page buttons: first, previous, a window of numbers with gaps, next, last.
+  function pageNumbers(page, last) {
+    const wanted = new Set([1, last, page - 1, page, page + 1]);
+    if (page <= 3) [2, 3, 4].forEach((n) => wanted.add(n));
+    if (page >= last - 2) [last - 1, last - 2, last - 3].forEach((n) => wanted.add(n));
+    const nums = [...wanted].filter((n) => n >= 1 && n <= last).sort((a, b) => a - b);
+    const out = [];
+    nums.forEach((n, i) => { if (i && n - nums[i - 1] > 1) out.push('…'); out.push(n); });
+    return out;
   }
 
-  const rangeText = (total, page, noun) => {
-    if (!total) return `No ${noun}s shown.`;
-    const from = (page - 1) * PAGE_SIZE + 1;
-    const to = Math.min(total, page * PAGE_SIZE);
-    return total <= PAGE_SIZE ? `${plural(total, noun)} shown.` : `Showing ${from}–${to} of ${total} ${noun}s.`;
-  };
+  // Row action menus: one open at a time, positioned against the viewport so
+  // a scrolling table can't clip them.
+  let openRowMenu = null;
+  function closeRowMenu(returnFocus = false) {
+    if (!openRowMenu) return;
+    const { menu, btn } = openRowMenu;
+    openRowMenu = null;
+    menu.hidden = true;
+    btn.setAttribute('aria-expanded', 'false');
+    if (returnFocus) btn.focus();
+  }
+  document.addEventListener('click', () => closeRowMenu());
+  window.addEventListener('resize', () => closeRowMenu());
+  document.addEventListener('scroll', (e) => { if (openRowMenu && !openRowMenu.menu.contains(e.target)) closeRowMenu(); }, true);
+
+  function rowMenu(label, items) {
+    const btn = el('button', { type: 'button', class: 'adm-icon-btn', 'aria-label': label, title: 'Actions', 'aria-haspopup': 'menu', 'aria-expanded': 'false' }, icon('dots'));
+    const menu = el('div', { class: 'adm-rowmenu-list', role: 'menu', hidden: '' },
+      ...items.filter(Boolean).map((it) => el('button', {
+        type: 'button', role: 'menuitem', class: it.danger ? 'danger' : '',
+        onclick: () => { closeRowMenu(); it.onClick(); },
+      }, icon(it.icon), it.text)));
+    btn.addEventListener('click', () => {
+      const wasOpen = openRowMenu && openRowMenu.menu === menu;
+      closeRowMenu();
+      if (wasOpen) return;
+      menu.hidden = false;
+      btn.setAttribute('aria-expanded', 'true');
+      openRowMenu = { menu, btn };
+      const r = btn.getBoundingClientRect();
+      const below = r.bottom + 4 + menu.offsetHeight <= innerHeight;
+      menu.style.top = `${Math.max(8, below ? r.bottom + 4 : r.top - menu.offsetHeight - 4)}px`;
+      menu.style.left = `${Math.max(8, r.right - menu.offsetWidth)}px`;
+      $('button', menu).focus();
+    });
+    menu.addEventListener('keydown', (e) => {
+      const items = $$('button', menu);
+      const i = items.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        items[(i + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length].focus();
+      } else if (e.key === 'Tab') closeRowMenu();
+    });
+    // Clicks inside the menu must not open the row they sit in.
+    return el('div', { class: 'adm-rowmenu', onclick: (e) => e.stopPropagation(), onkeydown: (e) => { if (e.key === 'Enter') e.stopPropagation(); } }, btn, menu);
+  }
+
+  function createTable(cfg) {
+    const { name, endpoint, listKey, body, noun, nounPlural = `${noun}s`, fields, labels, defaultSort, defaultDir = 'desc', render, empty } = cfg;
+    const table = body.closest('table');
+    const cols = $$('thead th', table).length;
+    const sizeSelect = $(`#${cfg.prefix}-size`);
+    const chips = $(`#${cfg.prefix}-chips`);
+    const countEl = $(`#${cfg.countId}`);
+    const pagerEl = $(`#${cfg.pagerId}`);
+    const state = { page: 1, pageSize: DEFAULT_PAGE_SIZE, sort: defaultSort, dir: defaultDir, total: 0, loaded: false };
+    let seq = 0;
+
+    // Sortable headers become buttons with an arrow and aria-sort.
+    const sortHeads = $$('th[data-sort]', table).map((th) => {
+      const key = th.dataset.sort;
+      const text = th.textContent.trim();
+      th.replaceChildren(el('button', {
+        type: 'button', class: 'adm-sort',
+        onclick: () => {
+          if (state.sort === key) state.dir = state.dir === 'asc' ? 'desc' : 'asc';
+          else { state.sort = key; state.dir = key === defaultSort ? defaultDir : 'asc'; }
+          state.page = 1;
+          update();
+        },
+      }, text, icon('sort', 'adm-sort-ic')));
+      return th;
+    });
+    const headLabels = $$('thead th', table).map((th) => th.textContent.trim());
+
+    const isFiltered = () => Object.values(fields).some((input) => input.value.trim());
+
+    function params({ paging = true } = {}) {
+      const p = new URLSearchParams();
+      for (const [key, input] of Object.entries(fields)) { const v = input.value.trim(); if (v) p.set(key, v); }
+      if (state.sort !== defaultSort || state.dir !== defaultDir) { p.set('sort', state.sort); p.set('dir', state.dir); }
+      if (paging && state.page > 1) p.set('page', String(state.page));
+      if (paging && state.pageSize !== DEFAULT_PAGE_SIZE) p.set('pageSize', String(state.pageSize));
+      return p;
+    }
+
+    function setFromParams(p) {
+      for (const [key, input] of Object.entries(fields)) input.value = p.get(key) || '';
+      state.sort = sortHeads.some((th) => th.dataset.sort === p.get('sort')) ? p.get('sort') : defaultSort;
+      state.dir = ['asc', 'desc'].includes(p.get('dir')) ? p.get('dir') : defaultDir;
+      state.page = Math.max(1, Math.floor(Number(p.get('page'))) || 1);
+      state.pageSize = PAGE_SIZES.includes(Number(p.get('pageSize'))) ? Number(p.get('pageSize')) : DEFAULT_PAGE_SIZE;
+      sizeSelect.value = String(state.pageSize);
+    }
+
+    function update({ replace = false } = {}) {
+      setTabUrl(name, params(), replace);
+      load().catch((err) => toast(err.message, 'error'));
+    }
+
+    function renderChips() {
+      const active = Object.entries(fields).filter(([, input]) => input.value.trim());
+      chips.hidden = !active.length;
+      chips.replaceChildren(...active.map(([key, input]) => {
+        let shown = input.value.trim();
+        if (input.tagName === 'SELECT') shown = input.selectedOptions[0]?.textContent || shown;
+        else if (input.type === 'date') shown = new Date(`${shown}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+        else shown = `“${shown}”`;
+        const text = `${labels[key]}: ${shown}`;
+        return el('span', { class: 'adm-chip' }, text,
+          el('button', { type: 'button', 'aria-label': `Remove filter ${text}`, onclick: () => { input.value = ''; state.page = 1; update(); } }, icon('x')));
+      }), active.length ? el('button', {
+        type: 'button', class: 'adm-chip-clear',
+        onclick: () => { Object.values(fields).forEach((input) => { input.value = ''; }); state.page = 1; update(); },
+      }, 'Clear all') : '');
+    }
+
+    function renderHeads() {
+      for (const th of sortHeads) {
+        const on = th.dataset.sort === state.sort;
+        if (on) th.setAttribute('aria-sort', state.dir === 'asc' ? 'ascending' : 'descending'); else th.removeAttribute('aria-sort');
+        th.classList.toggle('sorted', on);
+        $('use', th).setAttribute('href', on ? `#i-sort-${state.dir}` : '#i-sort');
+      }
+    }
+
+    function renderRows(rows) {
+      if (!rows.length) {
+        const filtered = isFiltered();
+        emptyRow(body, cols, filtered ? empty.filteredTitle : empty.title, filtered ? 'Try a different search or clear the filters.' : empty.text);
+        return;
+      }
+      body.replaceChildren(...rows.map(render));
+      // Labels for the card layout on phones.
+      for (const tr of body.rows) {
+        [...tr.cells].forEach((td, i) => { if (headLabels[i] && !td.classList.contains('actions')) td.dataset.label = headLabels[i]; });
+      }
+    }
+
+    function renderFooter() {
+      const { total, page, pageSize } = state;
+      const last = Math.max(1, Math.ceil(total / pageSize));
+      const from = total ? (page - 1) * pageSize + 1 : 0;
+      const to = Math.min(total, page * pageSize);
+      countEl.textContent = total ? `Showing ${from}–${to} of ${total} ${total === 1 ? noun : nounPlural}` : `No ${nounPlural}`;
+      if (last === 1) { pagerEl.replaceChildren(); return; }
+      const go = (p) => { state.page = p; update(); body.closest('.adm-table-wrap').scrollTop = 0; };
+      const nav = (iconName, label, target, disabled) => {
+        const b = iconButton(iconName, label, () => go(target), 'adm-page');
+        b.disabled = disabled;
+        return b;
+      };
+      pagerEl.replaceChildren(
+        nav('chevrons-left', 'First page', 1, page === 1),
+        nav('chevron-left', 'Previous page', page - 1, page === 1),
+        ...pageNumbers(page, last).map((n) => (n === '…'
+          ? el('span', { class: 'adm-page-gap', 'aria-hidden': 'true', text: '…' })
+          : el('button', {
+            type: 'button', class: `adm-page${n === page ? ' current' : ''}`, 'aria-label': `Page ${n}`,
+            ...(n === page ? { 'aria-current': 'page' } : {}), onclick: () => go(n),
+          }, String(n)))),
+        nav('chevron-right', 'Next page', page + 1, page === last),
+        nav('chevrons-right', 'Last page', last, page === last),
+      );
+    }
+
+    async function load() {
+      const mySeq = ++seq;
+      const api_ = params();
+      api_.set('sort', state.sort); api_.set('dir', state.dir);
+      api_.set('page', String(state.page)); api_.set('pageSize', String(state.pageSize));
+      if (cfg.exportLink) {
+        const ex = params({ paging: false });
+        ex.set('sort', state.sort); ex.set('dir', state.dir);
+        cfg.exportLink.href = `${cfg.exportPath}?${ex}`;
+      }
+      renderChips();
+      renderHeads();
+      if (!state.loaded) skeletonRows(body, cols);
+      table.setAttribute('aria-busy', 'true');
+      try {
+        const data = await api('GET', `${endpoint}?${api_}`);
+        if (mySeq !== seq) return; // a newer request has been made
+        state.loaded = true;
+        state.total = data.total;
+        if (data.page !== state.page) { state.page = data.page; setTabUrl(name, params(), true); }
+        renderRows(data[listKey]);
+        renderFooter();
+      } finally {
+        if (mySeq === seq) table.removeAttribute('aria-busy');
+      }
+    }
+
+    for (const input of Object.values(fields)) {
+      if (input.type === 'search') {
+        input.addEventListener('input', debounce(() => { state.page = 1; update({ replace: true }); }, 300));
+      } else {
+        input.addEventListener('change', () => { state.page = 1; update(); });
+      }
+    }
+    sizeSelect.addEventListener('change', () => { state.pageSize = Number(sizeSelect.value); state.page = 1; update(); });
+
+    return { name, load, params, setFromParams };
+  }
 
   // ------------------------------------------------------------ members
 
-  const membersState = { rows: [], page: 1, filtered: false };
-
-  function memberFilters() {
-    const p = new URLSearchParams();
-    const add = (k, v) => { if (v) p.set(k, v); };
-    add('q', $('#m-search').value.trim());
-    add('status', $('#m-status').value);
-    add('payment', $('#m-payment').value);
-    add('chapter', $('#m-chapter').value);
-    return p.toString();
+  async function updateMember(m, changes, done) {
+    try {
+      await api('PATCH', `/api/admin/members/${m.id}`, changes);
+      toast(`${m.full_name} ${done}.`);
+      tables.members.load();
+      refreshBadges();
+    } catch (err) { toast(err.message, 'error'); }
   }
 
-  async function loadMembers() {
-    const qs = memberFilters();
-    $('#m-export').href = `/api/admin/members.csv${qs ? '?' + qs : ''}`;
-    const body = $('#members-body');
-    if (!membersState.rows.length) skeletonRows(body, 8);
-    body.closest('table').setAttribute('aria-busy', 'true');
-    const { members } = await api('GET', `/api/admin/members${qs ? '?' + qs : ''}`);
-    body.closest('table').removeAttribute('aria-busy');
-    Object.assign(membersState, { rows: members, page: 1, filtered: Boolean(qs) });
-    renderMembers();
+  function memberRow(m) {
+    return el('tr', {
+      class: 'clickable', tabindex: '0',
+      onclick: () => openMember(m.id),
+      onkeydown: (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) openMember(m.id); },
+    },
+      el('td', { class: 'mono col-ref', text: m.reference }),
+      el('td', {}, el('div', { class: 'adm-person' }, el('span', { class: 'adm-avatar', 'aria-hidden': 'true', text: initials(m.full_name.replace(/\s+/g, '.')) }),
+        el('div', {}, el('strong', { text: m.full_name }), el('span', { class: 'sub ref-sub', text: m.reference }), m.possible_duplicates ? el('span', { class: 'sub warn', text: '⚠ possible duplicate' }) : null))),
+      el('td', {}, el('div', {}, el('span', { class: 'adm-email', title: m.email, text: m.email }), el('span', { class: 'sub', text: m.phone }))),
+      el('td', { text: m.chapter || '—' }),
+      el('td', { class: 'when', title: when(m.created_at), text: day(m.created_at) }),
+      el('td', {}, badge(PAYMENT_LABELS[m.payment_status])),
+      el('td', {}, badge(STATUS_LABELS[m.status])),
+      el('td', { class: 'actions' }, rowMenu(`Actions for ${m.full_name}`, [
+        { icon: 'eye', text: 'View details', onClick: () => openMember(m.id) },
+        m.status !== 'approved' && { icon: 'check', text: 'Approve', onClick: () => updateMember(m, { status: 'approved' }, 'approved') },
+        m.payment_status !== 'paid' && { icon: 'cash', text: 'Mark fee paid', onClick: () => updateMember(m, { paymentStatus: 'paid' }, 'marked as paid') },
+        m.status !== 'rejected' && { icon: 'x', text: 'Reject', danger: true, onClick: () => updateMember(m, { status: 'rejected' }, 'rejected') },
+      ])),
+    );
   }
-
-  function renderMembers() {
-    const { rows, page, filtered } = membersState;
-    const body = $('#members-body');
-    if (!rows.length) {
-      emptyRow(body, 8, filtered ? 'No matching members' : 'No registrations yet', filtered ? 'Try a different search or clear the filters.' : 'New registrations from the Membership page appear here.');
-    } else {
-      body.replaceChildren(...rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((m) => el('tr', {
-        class: 'clickable', tabindex: '0',
-        onclick: () => openMember(m.id),
-        onkeydown: (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) openMember(m.id); },
-      },
-        el('td', { class: 'mono', text: m.reference }),
-        el('td', {}, el('div', { class: 'adm-person' }, el('span', { class: 'adm-avatar', 'aria-hidden': 'true', text: initials(m.full_name.replace(/\s+/g, '.')) }),
-          el('div', {}, el('strong', { text: m.full_name }), m.possible_duplicates ? el('span', { class: 'sub warn', text: '⚠ possible duplicate' }) : null))),
-        el('td', {}, m.email, el('span', { class: 'sub', text: m.phone })),
-        el('td', { text: m.chapter || '—' }),
-        el('td', { class: 'when', text: when(m.created_at) }),
-        el('td', {}, badge(PAYMENT_LABELS[m.payment_status])),
-        el('td', {}, badge(STATUS_LABELS[m.status])),
-        el('td', { class: 'actions' }, iconButton('eye', `View ${m.full_name}`, (e) => { e.stopPropagation(); openMember(m.id); })),
-      )));
-    }
-    $('#members-count').textContent = rangeText(rows.length, page, 'member');
-    pager($('#members-pager'), rows.length, page, (p) => { membersState.page = p; renderMembers(); $('#members-body').closest('.adm-table-wrap').scrollTop = 0; });
-  }
-
-  const reloadMembers = debounce(() => loadMembers().catch((err) => toast(err.message, 'error')), 250);
-  $('#m-search').addEventListener('input', reloadMembers);
-  ['#m-status', '#m-payment', '#m-chapter'].forEach((s) => $(s).addEventListener('change', reloadMembers));
 
   const dialog = $('#member-dialog');
   let currentMember = null;
@@ -460,7 +681,7 @@
       await busy(f, () => api('PATCH', `/api/admin/members/${currentMember.id}`, formValues(f)));
       dialog.close();
       toast(`Saved changes for ${currentMember.full_name}.`);
-      loadMembers().catch((err) => toast(err.message, 'error'));
+      tables.members.load().catch((err) => toast(err.message, 'error'));
     } catch (err) { alertIn(dialog, err.message); }
   });
 
@@ -471,66 +692,35 @@
       await api('DELETE', `/api/admin/members/${m.id}`);
       dialog.close();
       toast(`Deleted ${m.full_name} (${m.reference}).`);
-      loadMembers().catch((err) => toast(err.message, 'error'));
+      tables.members.load().catch((err) => toast(err.message, 'error'));
     } catch (err) { alertIn(dialog, err.message); }
   });
 
   // ------------------------------------------------------------ donations
 
-  const donationsState = { rows: [], page: 1, filtered: false };
-
-  async function loadDonations() {
-    const p = new URLSearchParams();
-    if ($('#d-search').value.trim()) p.set('q', $('#d-search').value.trim());
-    if ($('#d-status').value) p.set('status', $('#d-status').value);
-    const qs = p.toString();
-    $('#d-export').href = `/api/admin/donations.csv${qs ? '?' + qs : ''}`;
-    const body = $('#donations-body');
-    if (!donationsState.rows.length) skeletonRows(body, 7);
-    const { donations } = await api('GET', `/api/admin/donations${qs ? '?' + qs : ''}`);
-    Object.assign(donationsState, { rows: donations, page: 1, filtered: Boolean(qs) });
-    renderDonations();
-  }
-
   async function setDonationStatus(d, status) {
     try {
-      const { donation } = await api('PATCH', `/api/admin/donations/${d.id}`, { status });
-      Object.assign(d, donation);
-      renderDonations();
+      await api('PATCH', `/api/admin/donations/${d.id}`, { status });
       toast(`${d.reference} marked ${DONATION_LABELS[status][0].toLowerCase()}.`);
+      tables.donations.load();
     } catch (err) { toast(err.message, 'error'); }
   }
 
-  function donationActions(d) {
-    const actions = [];
-    if (d.status !== 'received') actions.push(iconButton('check', `Mark ${d.reference} received`, () => setDonationStatus(d, 'received')));
-    if (d.status !== 'pledged') actions.push(iconButton('rotate', `Move ${d.reference} back to pledged`, () => setDonationStatus(d, 'pledged')));
-    if (d.status !== 'cancelled') actions.push(iconButton('x', `Cancel pledge ${d.reference}`, () => setDonationStatus(d, 'cancelled'), 'danger'));
-    return actions;
+  function donationRow(d) {
+    return el('tr', {},
+      el('td', { class: 'mono', text: d.reference }),
+      el('td', {}, el('div', {}, el('strong', { text: d.full_name }), el('span', { class: 'sub adm-email', title: d.email, text: d.email }))),
+      el('td', { class: 'amount' }, el('div', {}, gbp(d.amount_gbp), el('span', { class: 'sub', text: d.frequency === 'monthly' ? 'monthly' : 'one-off' }))),
+      el('td', { class: 'when', title: when(d.created_at), text: day(d.created_at) }),
+      el('td', { class: 'msg', text: d.message || '—' }),
+      el('td', {}, badge(DONATION_LABELS[d.status] || [d.status, ''])),
+      el('td', { class: 'actions' }, rowMenu(`Actions for ${d.reference}`, [
+        d.status !== 'received' && { icon: 'check', text: 'Mark received', onClick: () => setDonationStatus(d, 'received') },
+        d.status !== 'pledged' && { icon: 'rotate', text: 'Back to pledged', onClick: () => setDonationStatus(d, 'pledged') },
+        d.status !== 'cancelled' && { icon: 'x', text: 'Cancel pledge', danger: true, onClick: () => setDonationStatus(d, 'cancelled') },
+      ])),
+    );
   }
-
-  function renderDonations() {
-    const { rows, page, filtered } = donationsState;
-    const body = $('#donations-body');
-    if (!rows.length) {
-      emptyRow(body, 7, filtered ? 'No matching pledges' : 'No donation pledges yet', filtered ? 'Try a different search or clear the filter.' : 'Pledges made on the Donate page appear here.');
-    } else {
-      body.replaceChildren(...rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((d) => el('tr', {},
-        el('td', { class: 'mono', text: d.reference }),
-        el('td', {}, el('strong', { text: d.full_name }), el('span', { class: 'sub', text: d.email })),
-        el('td', { class: 'amount' }, gbp(d.amount_gbp), el('span', { class: 'sub', text: d.frequency === 'monthly' ? 'monthly' : 'one-off' })),
-        el('td', { class: 'when', text: when(d.created_at) }),
-        el('td', { class: 'msg', text: d.message || '' }),
-        el('td', {}, badge(DONATION_LABELS[d.status] || [d.status, ''])),
-        el('td', { class: 'actions' }, ...donationActions(d)),
-      )));
-    }
-    $('#donations-count').textContent = rangeText(rows.length, page, 'pledge');
-    pager($('#donations-pager'), rows.length, page, (p) => { donationsState.page = p; renderDonations(); });
-  }
-  const reloadDonations = debounce(() => loadDonations().catch((err) => toast(err.message, 'error')), 250);
-  $('#d-search').addEventListener('input', reloadDonations);
-  $('#d-status').addEventListener('change', reloadDonations);
 
   // ------------------------------------------------------------ payment accounts
 
@@ -573,13 +763,13 @@
 
   // ------------------------------------------------------------ admin users
 
-  async function loadUsers() {
-    const { admins } = await api('GET', '/api/admin/admins');
-    const me = $('#who').textContent;
-    $('#admin-list').replaceChildren(...admins.map((a) => el('li', {},
-      el('span', { class: 'adm-avatar', 'aria-hidden': 'true', text: initials(a.username) }),
-      el('div', {}, el('strong', { text: a.username }), el('span', { text: `Added ${when(a.created_at)}` })),
-      a.username === me ? el('span', { class: 'adm-badge good', text: 'You' }) : null)));
+  function adminRow(a) {
+    return el('tr', {},
+      el('td', {}, el('div', { class: 'adm-person' },
+        el('span', { class: 'adm-avatar', 'aria-hidden': 'true', text: initials(a.username) }), el('strong', { class: 'adm-break', text: a.username }))),
+      el('td', { class: 'when', title: when(a.created_at), text: day(a.created_at) }),
+      el('td', {}, a.username === $('#who').textContent ? el('span', { class: 'adm-badge good', text: 'You' }) : ''),
+    );
   }
 
   $('#password-form').addEventListener('submit', async (e) => {
@@ -600,9 +790,37 @@
       f.reset();
       alertIn(f, `Admin "${username}" added. Ask them to change their password after signing in.`, true);
       toast(`Admin "${username}" added.`);
-      loadUsers();
+      tables.users.load();
     } catch (err) { alertIn(f, err.message); }
   });
+
+  // ------------------------------------------------------------ table instances
+
+  const tables = {
+    members: createTable({
+      name: 'members', prefix: 'm', endpoint: '/api/admin/members', listKey: 'members', noun: 'member',
+      body: $('#members-body'), countId: 'members-count', pagerId: 'members-pager', render: memberRow,
+      fields: { q: $('#m-search'), status: $('#m-status'), payment: $('#m-payment'), chapter: $('#m-chapter'), from: $('#m-from'), to: $('#m-to') },
+      labels: { q: 'Search', status: 'Status', payment: 'Payment', chapter: 'Chapter', from: 'From', to: 'To' },
+      defaultSort: 'registered', exportLink: $('#m-export'), exportPath: '/api/admin/members.csv',
+      empty: { title: 'No registrations yet', filteredTitle: 'No matching members', text: 'New registrations from the Membership page appear here.' },
+    }),
+    donations: createTable({
+      name: 'donations', prefix: 'd', endpoint: '/api/admin/donations', listKey: 'donations', noun: 'pledge',
+      body: $('#donations-body'), countId: 'donations-count', pagerId: 'donations-pager', render: donationRow,
+      fields: { q: $('#d-search'), status: $('#d-status'), from: $('#d-from'), to: $('#d-to') },
+      labels: { q: 'Search', status: 'Status', from: 'From', to: 'To' },
+      defaultSort: 'pledged', exportLink: $('#d-export'), exportPath: '/api/admin/donations.csv',
+      empty: { title: 'No donation pledges yet', filteredTitle: 'No matching pledges', text: 'Pledges made on the Donate page appear here.' },
+    }),
+    users: createTable({
+      name: 'users', prefix: 'u', endpoint: '/api/admin/admins', listKey: 'admins', noun: 'admin',
+      body: $('#admin-list'), countId: 'admins-count', pagerId: 'admins-pager', render: adminRow,
+      fields: { q: $('#u-search') }, labels: { q: 'Search' },
+      defaultSort: 'username', defaultDir: 'asc',
+      empty: { title: 'No admins', filteredTitle: 'No matching admins', text: '' },
+    }),
+  };
 
   syncRail();
   boot().catch((err) => { showView('login'); alertIn($('#login-form'), err.message); });
