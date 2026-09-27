@@ -46,7 +46,13 @@ async function createAdmin(username, password, role = 'super_admin') {
   if (await db.one('SELECT 1 AS x FROM admins WHERE username = ?', [name])) {
     throw new Error('That admin already exists.');
   }
-  await db.query('INSERT INTO admins (username, password_hash, role) VALUES (?, ?, ?)', [name, hashPassword(password), role]);
+  try {
+    await db.query('INSERT INTO admins (username, password_hash, role) VALUES (?, ?, ?)', [name, hashPassword(password), role]);
+  } catch (err) {
+    // A database from before admin roles (migration 004): everyone is a Super admin there.
+    if (err.code !== 'ER_BAD_FIELD_ERROR') throw err;
+    await db.query('INSERT INTO admins (username, password_hash) VALUES (?, ?)', [name, hashPassword(password)]);
+  }
 }
 
 // Creates the admin named in server/.env (ADMIN_EMAIL / ADMIN_PASSWORD) if it
@@ -103,9 +109,11 @@ async function getSessionAdmin(req) {
   const token = readCookie(req, SESSION_COOKIE);
   if (!token) return null;
   const row = await db.one(`
-    SELECT a.id, a.username, a.role, a.created_at, s.expires_at FROM sessions s
+    SELECT a.*, s.expires_at FROM sessions s
     JOIN admins a ON a.id = s.admin_id WHERE s.token_hash = ?`, [sha256(token)]);
   if (!row || Number(row.expires_at) < Date.now()) return null;
+  // a.* rather than a.role: a database waiting for migration 004 has no role column
+  // yet, and its admins must still be able to sign in and apply that migration.
   return { id: row.id, username: row.username, role: row.role || 'super_admin', created_at: row.created_at };
 }
 

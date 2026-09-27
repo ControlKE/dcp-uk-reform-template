@@ -930,6 +930,10 @@ adminApi.patch('/donations/:id', need('donations.write'), async (req, res) => {
 adminApi.use(financeRoutes);
 // ---------------------------------------------------------------- admin: database (Super admin)
 
+// The audit log arrives with migration 004: on an older database waiting for it,
+// these entries are skipped rather than blocking the update itself.
+const auditSafe = (entry) => audit.record(null, entry).catch((err) => { if (!jobs.noTable(err)) throw err; });
+
 // Migrations, maintenance, backups and jobs, for Settings → Database.
 async function databaseState() {
   const [list, backupStatus, recent, version] = await Promise.all([
@@ -963,11 +967,11 @@ adminApi.post('/database/migrate', need('system'), async (req, res) => {
     try {
       await migrations.apply(pending, (line) => log.push(line));
     } catch (err) {
-      await audit.record(null, { ...audit.fromReq(req), action: 'database.migrate_failed', entity: 'database', entityId: db.config.database,
+      await auditSafe({ ...audit.fromReq(req), action: 'database.migrate_failed', entity: 'database', entityId: db.config.database,
         summary: `Migration failed: ${err.message}`.slice(0, 300), after: { pending: pending.map((m) => m.id), log }, flags: ['migration_failed'] });
       return res.status(500).json({ error: `A migration failed: ${err.message}. The database may be partly updated; restore the backup or ask for help before trying again.` });
     }
-    await audit.record(null, { ...audit.fromReq(req), action: 'database.migrated', entity: 'database', entityId: db.config.database,
+    await auditSafe({ ...audit.fromReq(req), action: 'database.migrated', entity: 'database', entityId: db.config.database,
       summary: `Applied ${pending.length} migration(s): ${pending.map((m) => m.id).join(', ')}`.slice(0, 300), after: { applied: pending.map((m) => m.id), backupConfirmed: true } });
     // A backup taken while the job log didn't exist yet is recorded now.
     await jobs.flushUnlogged().catch((err) => console.error('Could not record earlier job runs:', err.message));
@@ -985,7 +989,7 @@ adminApi.post('/database/backup', need('system'), async (req, res) => {
   // Backups also run in maintenance mode: that is exactly when one is needed.
   const result = await jobs.runDue({ trigger: 'admin', only: ['backup'], force: ['backup'], ignoreMaintenance: true });
   const r = result.find((x) => x.job === 'backup');
-  await audit.record(null, { ...audit.fromReq(req), action: 'database.backup', entity: 'database', entityId: db.config.database,
+  await auditSafe({ ...audit.fromReq(req), action: 'database.backup', entity: 'database', entityId: db.config.database,
     summary: r?.status === 'ok' ? `Off-site backup taken: ${r.detail}` : `Off-site backup failed: ${r?.detail || 'did not run'}`.slice(0, 300) });
   if (r?.status !== 'ok') return res.status(502).json({ error: `The backup failed: ${r?.detail || 'another job run was in progress; try again in a minute'}` });
   res.json({ result: r, ...(await databaseState()) });
