@@ -70,6 +70,7 @@
       fullName: form.elements.fullName.value,
       email: form.elements.email.value,
       message: form.elements.message.value,
+      donorKenyan: form.elements.donorKenyan.value,
       acknowledged: form.elements.acknowledged.checked,
     };
     submitBtn.disabled = true;

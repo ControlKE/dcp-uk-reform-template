@@ -113,6 +113,9 @@ function validateDonation(body) {
   if (d.fullName.length < 2) fail('fullName', 'Enter your full name.');
   if (!EMAIL_RE.test(d.email)) fail('email', 'Enter a valid email address.');
   if (b.acknowledged !== true) fail('acknowledged', 'Please tick the box to confirm you understand where this donation goes.');
+  // The donor's own declaration; anything but "yes" is flagged for the treasurer.
+  d.donorKenyan = str(b.donorKenyan, 7);
+  if (!['yes', 'no', 'unknown'].includes(d.donorKenyan)) fail('donorKenyan', 'Tell us whether you are a Kenyan citizen (or choose "Prefer not to say").');
   return { value: d, errors };
 }
 

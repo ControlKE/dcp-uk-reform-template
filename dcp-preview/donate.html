@@ -70,6 +70,13 @@
             <div class="field"><label for="d-name">Full name *</label><input id="d-name" name="fullName" type="text" autocomplete="name" required></div>
             <div class="field"><label for="d-email">Email address *</label><input id="d-email" name="email" type="email" autocomplete="email" required></div>
             <div class="field full"><label for="d-message">Message to the chapter (optional)</label><textarea id="d-message" name="message" maxlength="1000" placeholder="Let us know if this supports a specific chapter or activity"></textarea></div>
+            <fieldset class="field full" data-field="donorKenyan" style="border:0;padding:0;margin:0;">
+              <legend style="font-size:13px;font-weight:600;margin-bottom:6px;">Are you a Kenyan citizen? *</legend>
+              <p style="font-size:13px;color:var(--text-on-light-muted);margin:0 0 8px;">The party records this for donations. Anyone may donate; donations without a "yes" are checked by the treasurer.</p>
+              <label style="display:inline-flex;gap:6px;margin-right:18px;font-size:14px;"><input type="radio" name="donorKenyan" value="yes" style="width:auto;">Yes</label>
+              <label style="display:inline-flex;gap:6px;margin-right:18px;font-size:14px;"><input type="radio" name="donorKenyan" value="no" style="width:auto;">No</label>
+              <label style="display:inline-flex;gap:6px;font-size:14px;"><input type="radio" name="donorKenyan" value="unknown" style="width:auto;">Prefer not to say</label>
+            </fieldset>
             <label class="field full checkbox-field" data-field="acknowledged"><input type="checkbox" name="acknowledged" style="width:auto;margin-top:3px;"><span>I understand this donation supports DCP UK's own chapter activities, and is separate from party membership.</span></label>
           </div>
 

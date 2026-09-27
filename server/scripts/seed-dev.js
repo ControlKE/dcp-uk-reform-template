@@ -1,6 +1,6 @@
 // Fills a LOCAL database with realistic fake members and donations so the
 // dashboard and table paging have something to show:
-//   npm run seed:dev              (adds ~180 members and ~70 donation pledges)
+//   npm run seed:dev              (adds ~180 members, ~70 donation pledges and their payments)
 //   npm run seed:dev -- --reset   (removes everything this script added)
 // Seeded rows all use @seed.example email addresses, which is how --reset finds
 // them. Refuses to run in production or against a non-local database.
@@ -8,6 +8,7 @@ const crypto = require('node:crypto');
 const db = require('../lib/db');
 const migrations = require('../lib/migrations');
 const auth = require('../lib/auth');
+const finance = require('../lib/finance');
 
 const SEED_DOMAIN = 'seed.example';
 const LOCAL_HOSTS = ['127.0.0.1', 'localhost', '::1'];
@@ -33,6 +34,10 @@ const recent = (days) => new Date(Date.now() - Math.floor(days * Math.random() *
 const sqlTime = (d) => d.toISOString().slice(0, 19).replace('T', ' ');
 
 async function reset() {
+  // Seeded payments go first (recorded by seed actors, or linked to seeded people).
+  const t = await db.query(`DELETE FROM transactions WHERE recorded_by LIKE ? OR member_id IN (SELECT id FROM members WHERE email LIKE ?)
+    OR donation_id IN (SELECT id FROM donations WHERE email LIKE ?)`, [`%@${SEED_DOMAIN}`, `%@${SEED_DOMAIN}`, `%@${SEED_DOMAIN}`]);
+  console.log(`Removed ${t.affectedRows} seeded transactions (their audit-log entries stay: the log is append-only).`);
   const m = await db.query('DELETE FROM members WHERE email LIKE ?', [`%@${SEED_DOMAIN}`]);
   const d = await db.query('DELETE FROM donations WHERE email LIKE ?', [`%@${SEED_DOMAIN}`]);
   console.log(`Removed ${m.affectedRows} seeded members and ${d.affectedRows} seeded donations.`);
@@ -71,14 +76,81 @@ async function seed() {
   for (let i = 0; i < donations; i++) {
     const created = recent(300);
     const first = pick(FIRST); const last = pick(LAST);
-    await db.query(`INSERT INTO donations (reference, full_name, email, amount_gbp, frequency, message, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
+    await db.query(`INSERT INTO donations (reference, full_name, email, amount_gbp, frequency, message, status, donor_kenyan, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, [
       ref('DON'), `${first} ${last}`, `${first}.${last}.d${i}@${SEED_DOMAIN}`.toLowerCase(),
       pick([10, 20, 25, 50, 50, 100, 150, 250, 500]), weighted([['one_off', 80], ['monthly', 20]]), pick(MESSAGES),
-      weighted([['received', 55], ['pledged', 35], ['cancelled', 10]]), sqlTime(created), sqlTime(created),
+      weighted([['received', 55], ['pledged', 35], ['cancelled', 10]]), weighted([['yes', 80], ['no', 8], ['unknown', 12]]), sqlTime(created), sqlTime(created),
     ]);
   }
-  console.log(`Added ${members} members and ${donations} donation pledges (emails @${SEED_DOMAIN}). Remove them with: npm run seed:dev -- --reset`);
+  const n = await seedFinance();
+  console.log(`Added ${members} members, ${donations} donation pledges and ${n} transactions (emails @${SEED_DOMAIN}). Remove them with: npm run seed:dev -- --reset`);
+}
+
+// Payments for the seeded people, recorded and verified through the real finance
+// code (so receipts, balances and the audit log are exactly as in use): GBP bank
+// transfers, KES M-Pesa payments with a hand-entered rate, pending reports,
+// a rejected and a voided entry, a refund, expenses and other income.
+async function seedFinance() {
+  const recorder = { actor: `seed-treasurer@${SEED_DOMAIN}`, actorType: 'system' };
+  const verifier = { actor: `seed-chair@${SEED_DOMAIN}`, actorType: 'system' };
+  const tiers = Object.fromEntries((await finance.listTiers()).map((t) => [t.tkey, t]));
+  const today = new Date().toISOString().slice(0, 10);
+  const dayAfter = (sql, days) => { const d = new Date(sql.replace(' ', 'T') + 'Z'); d.setUTCDate(d.getUTCDate() + days); const iso = d.toISOString().slice(0, 10); return iso > today ? today : iso; };
+  let count = 0;
+  const record = async (input, source) => { count++; return finance.recordTransaction(input, recorder, source ? { source } : undefined); };
+
+  // Tiers: mostly Ordinary, some Stakeholder and Visit contribution.
+  const seeded = await db.query('SELECT id, created_at, payment_status, status FROM members WHERE email LIKE ? ORDER BY id', [`%@${SEED_DOMAIN}`]);
+  for (const m of seeded) {
+    const tier = weighted([['ordinary', 85], ['stakeholder', 9], ['visit', 6]]);
+    await db.query('UPDATE members SET tier_id = ?, billing_start = DATE(created_at), fee_review = 0, fee_review_reason = NULL WHERE id = ?', [tiers[tier].id, m.id]);
+    m.tier = tiers[tier];
+  }
+  for (const m of seeded) {
+    const kes = Math.random() < 0.4;
+    const rate = kes ? Math.round((158 + Math.random() * 14) * 100) / 100 : 1;
+    const input = {
+      type: m.tier.tx_type, amount: kes ? Math.round(m.tier.amount * rate) : m.tier.amount, currency: kes ? 'KES' : 'GBP', fxRate: rate,
+      method: kes ? 'mpesa_paybill' : 'bank_transfer', account: 'fee_account', memberId: m.id, dateReceived: dayAfter(m.created_at, crypto.randomInt(0, 6)),
+      externalRef: kes ? `Q${crypto.randomBytes(4).toString('hex').toUpperCase()}` : `BACS ${crypto.randomInt(100000, 999999)}`,
+    };
+    if (m.payment_status === 'paid') {
+      const id = await record(input);
+      await finance.verifyTransaction(id, verifier);
+      if (Math.random() < 0.3) await finance.reconcileTransaction(id, recorder);
+    } else if (m.payment_status === 'payment_reported') {
+      // The member said they paid; KES reports arrive without a rate for the treasurer to fill in.
+      await record({ ...input, fxRate: kes ? '' : 1, notes: 'Reported by the member on the website after registering.' }, 'member_report');
+    }
+  }
+
+  // Donations: received pledges get their verified payment; declarations come from the pledge.
+  const pledges = await db.query("SELECT id, amount_gbp, created_at, donor_kenyan FROM donations WHERE email LIKE ? AND status = 'received'", [`%@${SEED_DOMAIN}`]);
+  await db.query("UPDATE donations SET status = 'pledged' WHERE email LIKE ? AND status = 'received'", [`%@${SEED_DOMAIN}`]);
+  for (const p of pledges) {
+    const id = await record({ type: 'donation', amount: p.amount_gbp, currency: 'GBP', fxRate: 1, method: 'bank_transfer', account: 'donations_account',
+      donationId: p.id, donorKenyan: p.donor_kenyan, dateReceived: dayAfter(p.created_at, crypto.randomInt(1, 10)), externalRef: `DON ${crypto.randomInt(10000, 99999)}` });
+    await finance.verifyTransaction(id, verifier);
+  }
+
+  // A few of everything else.
+  const daysAgo = (n) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+  const other = [
+    { type: 'other_income', amount: 185, currency: 'GBP', method: 'cash', account: 'other', payerName: 'Summer meet-up raffle', dateReceived: daysAgo(40) },
+    { type: 'other_income', amount: 240, currency: 'GBP', method: 'card_online', account: 'other', payerName: 'Event tickets (Leeds town hall)', dateReceived: daysAgo(12) },
+    { type: 'donation', amount: 16500, currency: 'KES', fxRate: 165, method: 'mpesa_till', account: 'other', payerName: 'Wanjiku Harambee group', donorKenyan: 'yes', dateReceived: daysAgo(3), externalRef: 'SKL88A1B2C' },
+    { type: 'expense', amount: 150, currency: 'GBP', method: 'bank_transfer', account: 'donations_account', payerName: 'Venue hire, Birmingham community hall', dateReceived: daysAgo(20) },
+    { type: 'expense', amount: 45.5, currency: 'GBP', method: 'card_online', account: 'other', payerName: 'Leaflet printing', dateReceived: daysAgo(8) },
+  ];
+  for (const input of other) await finance.verifyTransaction(await record(input), verifier);
+  const paid = await db.one("SELECT x.member_id AS id FROM transactions x WHERE x.status = 'verified' AND x.type = 'membership_fee' AND x.member_id IS NOT NULL ORDER BY x.id DESC LIMIT 1");
+  if (paid) await finance.verifyTransaction(await record({ type: 'refund', amount: 20, currency: 'GBP', method: 'bank_transfer', account: 'fee_account', memberId: paid.id, dateReceived: daysAgo(1), notes: 'Paid twice; second payment returned.' }), verifier);
+  const toReject = await record({ type: 'donation', amount: 50, currency: 'GBP', method: 'bank_transfer', account: 'donations_account', payerName: 'Unknown transfer', donorKenyan: 'unknown', dateReceived: daysAgo(5) });
+  await finance.rejectTransaction(toReject, 'No matching credit in the bank statement.', verifier);
+  const toVoid = await db.one("SELECT id FROM transactions WHERE status = 'verified' AND type = 'donation' ORDER BY id LIMIT 1");
+  if (toVoid) await finance.voidTransaction(toVoid.id, 'Recorded twice by mistake; the other entry stands.', recorder);
+  return count;
 }
 
 (async () => {

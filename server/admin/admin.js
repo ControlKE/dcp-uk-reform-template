@@ -7,7 +7,7 @@
   const PAYMENT_LABELS = { pending_payment: ['Not paid', 'bad'], payment_reported: ['Check payment', 'warn'], paid: ['Paid', 'good'] };
   const STATUS_LABELS = { pending: ['Pending', 'warn'], approved: ['Approved', 'good'], rejected: ['Rejected', 'bad'] };
   const DONATION_LABELS = { pledged: ['Pledged', 'warn'], received: ['Received', 'good'], cancelled: ['Cancelled', ''] };
-  const TAB_TITLES = { email: 'Email', overview: 'Dashboard', members: 'Members', donations: 'Donations', accounts: 'Payment accounts', users: 'Admin users' };
+  const TAB_TITLES = { transactions: 'Transactions', reports: 'Reports', audit: 'Audit log', email: 'Email', overview: 'Dashboard', members: 'Members', donations: 'Donations', accounts: 'Payment accounts', users: 'Admin users' };
 
   // ------------------------------------------------------------ helpers
 
@@ -20,7 +20,7 @@
     });
     const data = await res.json().catch(() => ({}));
     if (res.status === 401 && !url.endsWith('/login')) { showView('login'); throw new Error('Your session has ended. Please sign in again.'); }
-    if (!res.ok) throw new Error(data.error || `Request failed (${res.status}).`);
+    if (!res.ok) throw Object.assign(new Error(data.error || `Request failed (${res.status}).`), { fields: data.fields });
     return data;
   }
 
@@ -133,6 +133,11 @@
   }
 
   function enterApp(admin) {
+    me = admin;
+    applyPerms();
+    $('#adm-role-2').textContent = admin.roleLabel || 'Administrator';
+    $('#pf-role').textContent = admin.roleLabel || 'Administrator';
+    financeOptions().catch(() => {});
     $('#who').textContent = admin.username;
     $('#adm-who-2').textContent = admin.username;
     $('#adm-avatar').textContent = initials(admin.username);
@@ -257,11 +262,14 @@
   // The hash holds the section and its table state: #members?status=pending&page=2
   const loaders = {
     overview: () => loadOverview(),
+    transactions: () => financeOptions().then(() => tables.transactions.load()),
+    reports: () => loadReports(),
+    audit: () => tables.audit.load(),
     email: () => tables.email.load(),
     members: () => tables.members.load(),
     donations: () => tables.donations.load(),
     accounts: () => loadAccounts(),
-    users: () => tables.users.load(),
+    users: () => (canDo('admins.manage') ? tables.users.load() : Promise.resolve()),
   };
   let currentTab = null;
 
@@ -280,7 +288,7 @@
   }
 
   function openTab(name, params, { push = true } = {}) {
-    if (!loaders[name]) name = 'overview';
+    if (!loaders[name] || !tabAllowed(name)) name = 'overview';
     currentTab = name;
     closeRowMenu();
     $$('.tabs [data-tab]').forEach((b) => {
@@ -377,6 +385,7 @@
     };
     set('#nav-badge-members', s.membersPending, `${s.membersPending} awaiting review`);
     set('#nav-badge-donations', s.donationsPledged, `${s.donationsPledged} pledges awaiting transfer`);
+    set('#nav-badge-transactions', s.paymentsToCheck, `${s.paymentsToCheck} payments to verify`);
     set('#nav-badge-email', s.emailsUnread, `${s.emailsUnread} unread`);
   }
   // Keeps sidebar counts and the bell current whichever section is open.
@@ -408,7 +417,7 @@
     }));
 
     $('#dash-pending-n').textContent = String(d.membersPending);
-    $('#dash-verify-n').textContent = String(d.paymentsToCheck);
+    drawMoney(d.money);
 
     // Members by chapter
     $('#dash-chapter-sub').textContent = `${d.members} registered in ${d.byChapter.length} ${d.byChapter.length === 1 ? 'group' : 'groups'}`;
@@ -462,7 +471,77 @@
     node.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } });
   };
   onActivate($('#dash-pending'), () => showMembers({ status: 'pending' }));
-  onActivate($('#dash-verify'), () => showMembers({ payment: 'payment_reported' }));
+  onActivate($('#dash-verify'), () => (canDo('finance.read') ? openTab('transactions', new URLSearchParams({ status: 'pending' })) : showMembers({ payment: 'payment_reported' })));
+  $('#dash-tx-all').addEventListener('click', () => openTab('transactions'));
+
+  let earnType = 'membership_fee';
+  let lastMoney = null;
+  function trendChip(now, before) {
+    const change = before ? Math.round(((now - before) / before) * 100) : null;
+    const [kind, text] = change === null ? (now ? ['up', 'new'] : ['flat', '–']) : change > 0 ? ['up', `+${change}%`] : change < 0 ? ['down', `${change}%`] : ['flat', '0%'];
+    return el('span', { class: `adm-chip-trend ${kind}`, text });
+  }
+  function drawMoney(m) {
+    lastMoney = m;
+    $('#dash-money-n').textContent = gbp(m.monthTotal);
+    $('#dash-money-sub').replaceChildren('This month', trendChip(m.monthTotal, m.prevMonthToDate));
+    drawChart('money', $('#chart-money'), (t) => ({
+      chart: baseChart(t, { type: 'area', height: 80, sparkline: { enabled: true } }),
+      series: [{ name: 'Income', data: m.month.map((x) => x.gbp) }],
+      colors: [t.bar], stroke: { width: 2, curve: 'smooth' },
+      fill: { type: 'gradient', gradient: { opacityFrom: 0.45, opacityTo: 0.05 } },
+      tooltip: { theme: t.dark ? 'dark' : 'light', x: { show: false }, y: { formatter: (v) => gbp(v), title: { formatter: () => '' } } },
+    }));
+    $('#dash-verify-n').textContent = String(m.toVerify);
+    $('#dash-growth-n').textContent = gbp(m.weekTotal);
+    $('#dash-growth-chip').replaceChildren(trendChip(m.weekTotal, m.lastWeekTotal), el('span', { class: 'adm-muted', text: ` vs previous 7 days (${gbp(m.lastWeekTotal)})` }));
+    drawChart('growth', $('#chart-growth'), (t) => ({
+      chart: baseChart(t, { type: 'bar', height: 170 }),
+      series: [{ name: 'Income', data: m.week.map((x) => x.gbp) }],
+      xaxis: { categories: m.week.map((x) => weekday(x.date)), labels: { style: { colors: t.muted } }, axisBorder: { show: false }, axisTicks: { show: false } },
+      yaxis: { show: false },
+      colors: m.week.map((_, i) => (i === m.week.length - 1 ? t.barToday : t.barSoft)),
+      plotOptions: { bar: { distributed: true, columnWidth: '50%', borderRadius: 4 } },
+      legend: { show: false }, dataLabels: { enabled: false }, grid: { show: false },
+      tooltip: { theme: t.dark ? 'dark' : 'light', y: { formatter: (v) => gbp(v), title: { formatter: () => 'Income' } } },
+    }));
+    drawEarnings();
+    drawChart('tiers', $('#chart-tiers'), (t) => ({
+      chart: baseChart(t, { type: 'donut', height: 240 }),
+      series: m.tiers.map((x) => x.n), labels: m.tiers.map((x) => x.name),
+      colors: [t.bar, t.dark ? '#b8e6bf' : cssVar('--bg-dark-3'), cssVar('--accent-2')],
+      legend: { position: 'bottom', labels: { colors: t.text } },
+      dataLabels: { enabled: false }, stroke: { width: 2, colors: [cssVar('--adm-surface') || '#fff'] },
+      plotOptions: { pie: { donut: { size: '68%', labels: { show: true, value: { color: t.text }, total: { show: true, label: 'Members', color: t.muted, formatter: (w) => String(w.globals.seriesTotals.reduce((a, b) => a + b, 0)) } } } } },
+      tooltip: { theme: t.dark ? 'dark' : 'light' },
+    }));
+    $('#dash-tx').replaceChildren(...(m.recent.length ? m.recent.map((x) => el('li', {}, el('button', { type: 'button', onclick: () => (canDo('finance.read') ? openTx(x.id) : null) },
+      el('span', { class: `adm-tile adm-tone-${x.type === 'donation' ? 'danger' : isOut(x.type) ? 'warning' : 'primary'}`, 'aria-hidden': 'true' }, icon(x.type === 'donation' ? 'heart' : isOut(x.type) ? 'rotate' : 'cash')),
+      el('span', { class: 'adm-list-main' }, el('strong', { text: x.payer_name }), el('span', { text: `${typeLabel(x.type)} · ${fmtDate(x.date_received)}` })),
+      el('span', { class: 'adm-list-end' }, el('strong', { class: isOut(x.type) ? 'adm-out' : '', text: txAmount(x) }), badge(TX_STATUS[x.status] || [x.status, '']))))) : [el('li', { class: 'adm-muted', text: 'No payments recorded yet.' })]));
+  }
+  function drawEarnings() {
+    const m = lastMoney;
+    if (!m) return;
+    $$('[data-earn]').forEach((b) => {
+      const on = b.dataset.earn === earnType;
+      b.setAttribute('aria-selected', String(on));
+      b.classList.toggle('selected', on);
+      $('[data-earn-total]', b).textContent = gbp(m.earnings[b.dataset.earn].reduce((s, x) => s + x.gbp, 0));
+    });
+    const series = m.earnings[earnType];
+    drawChart('earn', $('#chart-earn'), (t) => ({
+      chart: baseChart(t, { type: 'bar', height: 230 }),
+      series: [{ name: typeLabel(earnType), data: series.map((x) => x.gbp) }],
+      xaxis: { categories: series.map((x) => new Date(`${x.month}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', timeZone: 'UTC' })), labels: { style: { colors: t.muted } }, axisBorder: { show: false }, axisTicks: { show: false } },
+      yaxis: { labels: { style: { colors: t.muted }, formatter: (v) => `£${Math.round(v)}` } },
+      colors: series.map((_, i) => (i === series.length - 1 ? t.barToday : t.barSoft)),
+      plotOptions: { bar: { distributed: true, columnWidth: '45%', borderRadius: 4 } },
+      legend: { show: false }, dataLabels: { enabled: false }, grid: { borderColor: t.border, strokeDashArray: 4 },
+      tooltip: { theme: t.dark ? 'dark' : 'light', y: { formatter: (v) => gbp(v) } },
+    }));
+  }
+  $$('[data-earn]').forEach((b) => b.addEventListener('click', () => { earnType = b.dataset.earn; drawEarnings(); }));
   $('#dash-recent-all').addEventListener('click', () => showMembers());
 
   // Sections that arrive in later updates.
@@ -565,7 +644,8 @@
     const items = [];
     if (n.unreadMessages) items.push(item('warning', 'mail', `${plural(n.unreadMessages, 'unread message')}`, 'From the website contact form', () => openTab('email', new URLSearchParams({ label: String(mailLabels.find((l) => l.name === 'Contact')?.id || '') }))));
     if (n.failedEmails) items.push(item('danger', 'alert', `${plural(n.failedEmails, 'email')} failed to send`, 'Open Sent to see the errors', () => openTab('email', new URLSearchParams({ folder: 'sent' }))));
-    if (n.paymentsToCheck) items.push(item('bright', 'cash', `${plural(n.paymentsToCheck, 'payment')} to verify`, 'Members who say they have paid', () => showMembers({ payment: 'payment_reported' })));
+    if (n.paymentsToCheck) items.push(item('bright', 'cash', `${plural(n.paymentsToCheck, 'payment')} to verify`, 'Recorded or reported, not verified yet', () => (canDo('finance.read') ? openTab('transactions', new URLSearchParams({ status: 'pending' })) : showMembers({ payment: 'payment_reported' }))));
+    if (n.feeReviews && canDo('finance.write')) items.push(item('warning', 'alert', `${plural(n.feeReviews, 'fee record')} to review`, 'Imported or pre-Finance fees to check', () => showMembers({ review: '1' })));
     for (const m of n.newRegistrations) items.push(item('warning', 'user-plus', `New registration: ${m.full_name}`, `${m.chapter || 'No chapter'} · ${when(m.created_at)}`, () => openMember(m.id)));
     if (n.pending > n.newRegistrations.length) items.push(item('primary', 'users', `All ${n.pending} pending applications`, 'Open the Members list', () => showMembers({ status: 'pending' })));
     if (n.donationsPledged) items.push(item('danger', 'heart', `${plural(n.donationsPledged, 'pledge')} awaiting transfer`, 'Mark them received when the money arrives', () => showDonations('pledged')));
@@ -659,8 +739,12 @@
     row(dl, 'Message', d.message);
     row(dl, 'Last updated', when(d.updated_at));
     $('#dd-notes').value = d.admin_notes || '';
+    $('#dd-kenyan').value = d.donor_kenyan || 'unknown';
+    lockForm($('#dd-form'), !canDo('donations.write'));
+    $('#dd-tx').replaceChildren();
     alertIn(donationDialog, '');
     donationDialog.showModal();
+    loadDonationPayments(d).catch((err) => toast(err.message, 'error'));
   }
   async function openDonationById(id) {
     try { openDonation((await api('GET', `/api/admin/donations/${id}`)).donation); } catch (err) { toast(err.message, 'error'); }
@@ -669,9 +753,9 @@
     e.preventDefault();
     const f = e.currentTarget;
     try {
-      await busy(f, () => api('PATCH', `/api/admin/donations/${currentDonation.id}`, { adminNotes: f.elements.adminNotes.value }));
+      await busy(f, () => api('PATCH', `/api/admin/donations/${currentDonation.id}`, { adminNotes: f.elements.adminNotes.value, donorKenyan: f.elements.donorKenyan.value }));
       donationDialog.close();
-      toast(`Notes saved for ${currentDonation.reference}.`);
+      toast(`Saved ${currentDonation.reference}.`);
       tables.donations.load().catch(() => {});
     } catch (err) { alertIn(donationDialog, err.message); }
   });
@@ -878,6 +962,11 @@
       const api_ = params();
       api_.set('sort', state.sort); api_.set('dir', state.dir);
       api_.set('page', String(state.page)); api_.set('pageSize', String(state.pageSize));
+      for (const [link, path] of cfg.exportLinks || []) {
+        const ex = params({ paging: false });
+        ex.set('sort', state.sort); ex.set('dir', state.dir);
+        link.href = `${path}${path.includes('?') ? '&' : '?'}${ex}`;
+      }
       if (cfg.exportLink) {
         const ex = params({ paging: false });
         ex.set('sort', state.sort); ex.set('dir', state.dir);
@@ -895,6 +984,7 @@
         if (data.page !== state.page) { state.page = data.page; setTabUrl(name, params(), true); }
         renderRows(data[listKey]);
         renderFooter();
+        if (cfg.afterLoad) cfg.afterLoad(data);
       } finally {
         if (mySeq === seq) table.removeAttribute('aria-busy');
       }
@@ -940,13 +1030,13 @@
       el('td', { class: 'col-contact' }, el('div', {}, el('span', { class: 'adm-email', title: m.email, text: m.email }), el('span', { class: 'sub', text: m.phone }))),
       el('td', { text: m.chapter || '—' }),
       el('td', { class: 'when col-reg', title: when(m.created_at), text: day(m.created_at) }),
-      el('td', {}, badge(PAYMENT_LABELS[m.payment_status])),
+      el('td', {}, el('div', { class: 'adm-badges' }, badge(PAYMENT_LABELS[m.payment_status]), m.fee_review ? el('span', { class: 'adm-badge warn', title: 'Fee needs review', text: 'Review' }) : null)),
       el('td', {}, badge(STATUS_LABELS[m.status])),
       el('td', { class: 'actions' }, rowMenu(`Actions for ${m.full_name}`, [
         { icon: 'eye', text: 'View details', onClick: () => openMember(m.id) },
-        m.status !== 'approved' && { icon: 'check', text: 'Approve', onClick: () => updateMember(m, { status: 'approved' }, 'approved') },
-        m.payment_status !== 'paid' && { icon: 'cash', text: 'Mark fee paid', onClick: () => updateMember(m, { paymentStatus: 'paid' }, 'marked as paid') },
-        m.status !== 'rejected' && { icon: 'x', text: 'Reject', danger: true, onClick: () => rejectMember(m) },
+        canDo('members.write') && m.status !== 'approved' && { icon: 'check', text: 'Approve', onClick: () => updateMember(m, { status: 'approved' }, 'approved') },
+        canDo('finance.write') && { icon: 'cash', text: 'Record payment', onClick: () => openRecordPayment({ member: m }) },
+        canDo('members.write') && m.status !== 'rejected' && { icon: 'x', text: 'Reject', danger: true, onClick: () => rejectMember(m) },
       ])),
     );
   }
@@ -979,15 +1069,27 @@
     row(dl, 'Language', m.language);
     row(dl, 'Occupation', m.occupation);
     row(dl, 'Interest', m.interest === 'Other' && m.interest_other ? `Other — ${m.interest_other}` : m.interest);
-    row(dl, 'Fee due', money(m.fee_amount, m.fee_currency));
+    row(dl, 'Registration fee quoted', money(m.fee_amount, m.fee_currency));
+    row(dl, 'Chapter news emails', m.email_opt_out ? 'Unsubscribed' : m.marketing_consent_at ? `Agreed ${day(m.marketing_consent_at)}` : 'Not agreed');
     row(dl, 'Payment code given', m.payment_note);
     row(dl, 'Last updated', when(m.updated_at));
     const f = $('#md-form');
+    await financeOptions().catch(() => {});
+    $('#md-tier').replaceChildren(...(finOpts?.tiers || []).filter((t) => t.active || t.id === m.tier_id).map((t) => el('option', { value: String(t.id), text: `${t.name} (${gbp(t.amount)}${t.renewal === 'yearly' ? ' a year' : ', once'})` })));
+    f.elements.tierId.value = String(m.tier_id || '');
     f.elements.status.value = m.status;
     f.elements.paymentStatus.value = m.payment_status;
     f.elements.adminNotes.value = m.admin_notes || '';
+    lockForm(f, !canDo('members.write'));
+    // "Paid (confirmed)" comes only from verified transactions.
+    f.elements.paymentStatus.disabled = !canDo('members.write') || m.payment_status === 'paid';
+    $('#md-delete').hidden = !canDo('members.write');
+    $('#md-figures').replaceChildren();
+    $('#md-tx').replaceChildren();
+    $('#md-review').hidden = true;
     alertIn(dialog, '');
     dialog.showModal();
+    loadMemberFinance(m).catch((err) => toast(err.message, 'error'));
   }
 
   $('#md-form').addEventListener('submit', async (e) => {
@@ -1041,16 +1143,17 @@
       onkeydown: (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) openDonation(d); },
     },
       el('td', { class: 'mono', text: d.reference }),
-      el('td', {}, el('div', {}, el('strong', { text: d.full_name }), el('span', { class: 'sub adm-email', title: d.email, text: d.email }))),
+      el('td', {}, el('div', {}, el('strong', { text: d.full_name }), el('span', { class: 'sub adm-email', title: d.email, text: d.email }),
+        d.donor_kenyan !== 'yes' ? el('span', { class: 'adm-kenyan-sub', text: `Kenyan: ${d.donor_kenyan || 'unknown'}` }) : null)),
       el('td', { class: 'amount' }, el('div', {}, gbp(d.amount_gbp), el('span', { class: 'sub', text: d.frequency === 'monthly' ? 'monthly' : 'one-off' }))),
       el('td', { class: 'when col-pledged', title: when(d.created_at), text: day(d.created_at) }),
       el('td', { class: 'msg col-msg', text: d.message || '—' }),
+      el('td', { class: 'col-kenyan' }, badge(KENYAN[d.donor_kenyan] || KENYAN.unknown)),
       el('td', {}, badge(DONATION_LABELS[d.status] || [d.status, ''])),
       el('td', { class: 'actions' }, rowMenu(`Actions for ${d.reference}`, [
         { icon: 'eye', text: 'View details', onClick: () => openDonation(d) },
-        d.status !== 'received' && { icon: 'check', text: 'Mark received', onClick: () => setDonationStatus(d, 'received') },
-        d.status !== 'pledged' && { icon: 'rotate', text: 'Back to pledged', onClick: () => setDonationStatus(d, 'pledged') },
-        d.status !== 'cancelled' && { icon: 'x', text: 'Cancel pledge', danger: true, onClick: () => setDonationStatus(d, 'cancelled') },
+        canDo('finance.write') && d.status === 'pledged' && { icon: 'cash', text: 'Record payment', onClick: () => openRecordPayment({ donation: d }) },
+        canDo('donations.write') && d.status === 'pledged' && { icon: 'x', text: 'Cancel pledge', danger: true, onClick: () => setDonationStatus(d, 'cancelled') },
       ])),
     );
   }
@@ -1076,6 +1179,7 @@
     fill(fee, s.feeAccount.value); meta(fee, s.feeAccount); syncMethod();
     fill(don, s.donationAccount.value); meta(don, s.donationAccount);
     alertIn(fee, ''); alertIn(don, '');
+    await loadFinanceSettings();
   }
 
   function saveAccountForm(selector, url, label) {
@@ -1100,8 +1204,10 @@
     return el('tr', {},
       el('td', {}, el('div', { class: 'adm-person' },
         el('span', { class: 'adm-avatar', 'aria-hidden': 'true', text: initials(a.username) }), el('strong', { class: 'adm-break', text: a.username }))),
+      el('td', {}, el('span', { class: `adm-badge ${a.role === 'super_admin' ? 'good' : ''}`, text: ROLE_LABELS[a.role] || a.role })),
       el('td', { class: 'when', title: when(a.created_at), text: day(a.created_at) }),
-      el('td', {}, a.username === $('#who').textContent ? el('span', { class: 'adm-badge good', text: 'You' }) : ''),
+      el('td', { class: 'actions' }, a.username === $('#who').textContent ? el('span', { class: 'adm-badge good', text: 'You' })
+        : rowMenu(`Actions for ${a.username}`, Object.keys(ROLE_LABELS).filter((r) => r !== a.role).map((r) => ({ icon: 'shield', text: `Make ${ROLE_LABELS[r].toLowerCase()}`, onClick: () => changeRole(a, r) })))),
     );
   }
 
@@ -1792,6 +1898,580 @@
     return { open, openDraft };
   })();
 
+  // ------------------------------------------------------------ roles in the UI (the API enforces them too)
+
+  let me = null;
+  const canDo = (perm) => Boolean(me && (me.perms.includes('*') || me.perms.includes(perm)));
+  function applyPerms() {
+    $$('[data-perm]').forEach((node) => node.classList.toggle('adm-noperm', !canDo(node.dataset.perm)));
+  }
+  const tabAllowed = (name) => { const b = $(`.adm-nav [data-tab="${name}"]`); return !b || !b.dataset.perm || canDo(b.dataset.perm); };
+  function lockForm(form, locked) {
+    $$('input, select, textarea, button[type="submit"]', form).forEach((c) => { c.disabled = locked; });
+  }
+
+  // ------------------------------------------------------------ finance: shared helpers
+
+  let finOpts = null;
+  async function financeOptions(force = false) {
+    if (!finOpts || force) {
+      finOpts = await api('GET', '/api/admin/finance/options');
+      for (const id of ['#m-tier', '#out-tier']) {
+        const s = $(id);
+        const v = s.value;
+        s.replaceChildren(el('option', { value: '', text: 'All tiers' }), ...finOpts.tiers.map((t) => el('option', { value: String(t.id), text: t.name })));
+        s.value = v;
+      }
+    }
+    return finOpts;
+  }
+  const TX_STATUS = { pending: ['Pending verification', 'warn'], verified: ['Verified', 'good'], reconciled: ['Reconciled', 'good'], rejected: ['Rejected', 'bad'], void: ['Void', ''] };
+  const KENYAN = { yes: ['Kenyan: yes', 'good'], no: ['Kenyan: no', 'bad'], unknown: ['Kenyan: unknown', 'warn'] };
+  const typeLabel = (t) => finOpts?.types[t]?.label || t;
+  const methodLabel = (m) => finOpts?.methods[m] || m;
+  const isOut = (t) => Boolean(finOpts?.types[t]?.out);
+  const isFeeType = (t) => Boolean(finOpts?.types[t]?.fee);
+  const txAmount = (x) => `${isOut(x.type) ? '−' : ''}${money(x.amount, x.currency)}`;
+  const fmtDate = (iso) => (iso ? new Date(`${String(iso).slice(0, 10)}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : '');
+  const todayIso = () => new Date().toISOString().slice(0, 10);
+  const ACCOUNT_SHORT = { fee_account: 'Fee account', donations_account: 'Donations account', other: 'Other / cash' };
+
+  function rowNode(dl, label, node) {
+    if (!node) return;
+    dl.append(el('dt', { text: label }), el('dd', {}, node));
+  }
+
+  // After any change to money: refresh whatever is showing it.
+  function afterTxChange() {
+    if (currentTab === 'transactions') tables.transactions.load().catch(() => {});
+    if (currentTab === 'reports') loadReports().catch(() => {});
+    if (currentTab === 'donations') tables.donations.load().catch(() => {});
+    if (currentTab === 'members') tables.members.load().catch(() => {});
+    if (currentTab === 'overview') loadOverview().catch(() => {});
+    if (dialog.open && currentMember) loadMemberFinance(currentMember).catch(() => {});
+    if (donationDialog.open && currentDonation) loadDonationPayments(currentDonation).catch(() => {});
+    if (txDrawer.open && currentTx) openTx(currentTx.id).catch(() => {});
+    refreshBadges();
+  }
+
+  // ------------------------------------------------------------ transactions: actions
+
+  async function verifyTx(x) {
+    if (x.recorded_by === me.username && finOpts?.settings?.requireSecondVerifier !== false) {
+      toast('You recorded this payment, so another admin must verify it (four-eyes check).', 'error');
+      return;
+    }
+    try {
+      const r = await api('POST', `/api/admin/transactions/${x.id}/verify`);
+      toast(`Verified.${r.receipt ? ` Receipt ${r.receipt}${r.emailed ? ' emailed to the payer' : ' issued'}.` : ''}`);
+      if (r.selfVerified) toast('You verified a payment you recorded. This is flagged in the audit log.', 'info');
+      afterTxChange();
+    } catch (err) { toast(err.message, 'error'); }
+  }
+  async function txStatusAction(x, action, label, reasonPrompt) {
+    const body = {};
+    if (reasonPrompt) {
+      body.reason = await askReason(reasonPrompt);
+      if (!body.reason) return;
+    }
+    try {
+      await api('POST', `/api/admin/transactions/${x.id}/${action}`, body);
+      toast(label);
+      afterTxChange();
+    } catch (err) { toast(err.message, 'error'); }
+  }
+  function txActions(x, inDrawer = false) {
+    const write = canDo('finance.write');
+    return [
+      !inDrawer && { icon: 'eye', text: 'View details', onClick: () => openTx(x.id) },
+      write && x.status === 'pending' && { icon: 'check', text: 'Verify', primary: true, onClick: () => verifyTx(x) },
+      write && x.status === 'pending' && { icon: 'pencil', text: 'Edit', onClick: () => editTx(x.id) },
+      write && x.status === 'verified' && { icon: 'bank', text: 'Mark reconciled', onClick: () => txStatusAction(x, 'reconcile', 'Marked as reconciled with the bank statement.') },
+      x.receipt_no && { icon: 'receipt', text: 'Open receipt', onClick: () => window.open(`/api/admin/transactions/${x.id}/receipt`, '_blank', 'noopener') },
+      write && x.status === 'pending' && { icon: 'x', text: 'Reject', danger: true, onClick: () => txStatusAction(x, 'reject', 'Rejected.', { title: 'Reject this payment?', sub: `${x.payer_name}, ${txAmount(x)}. The reason is kept with the transaction and in the audit log.`, confirm: 'Reject payment' }) },
+      write && x.status !== 'void' && { icon: 'ban', text: 'Void', danger: true, onClick: () => txStatusAction(x, 'void', 'Voided. It stays on the ledger, marked void.', { title: 'Void this transaction?', sub: `${x.payer_name}, ${txAmount(x)}${x.receipt_no ? `, receipt ${x.receipt_no}` : ''}. Voided entries stay visible with the reason; balances and pledges are updated.`, confirm: 'Void transaction' }) },
+    ].filter(Boolean);
+  }
+
+  function txRow(x) {
+    const flags = [];
+    if (x.self_verified) flags.push(el('span', { class: 'adm-badge bad', title: 'Verified by the admin who recorded it', text: 'Self-verified' }));
+    if (x.amount_gbp == null) flags.push(el('span', { class: 'adm-badge warn', text: 'Needs rate' }));
+    if (x.type === 'donation' && x.donor_kenyan !== 'yes') flags.push(badge(KENYAN[x.donor_kenyan || 'unknown']));
+    return el('tr', {
+      class: `clickable${x.status === 'void' ? ' adm-void' : ''}`, tabindex: '0',
+      onclick: () => openTx(x.id),
+      onkeydown: (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) openTx(x.id); },
+    },
+      el('td', { class: 'when', text: fmtDate(x.date_received) }),
+      el('td', {}, el('div', {}, el('strong', { text: x.payer_name }),
+        el('span', { class: 'sub', text: [x.member_reference, x.donation_reference, x.source === 'member_report' ? 'reported by member' : ''].filter(Boolean).join(' · ') }))),
+      el('td', { class: 'col-contact' }, el('div', {}, typeLabel(x.type), el('span', { class: 'sub', text: ACCOUNT_SHORT[x.account] || x.account }))),
+      el('td', { class: `amount${isOut(x.type) ? ' adm-out' : ''}` }, el('div', {}, txAmount(x),
+        x.currency !== 'GBP' ? el('span', { class: 'sub', text: x.amount_gbp == null ? 'rate not entered' : `${gbp(x.amount_gbp)} at ${Number(x.fx_rate)}` }) : null)),
+      el('td', { class: 'col-reg', text: methodLabel(x.method) }),
+      el('td', { class: 'mono col-pledged', text: x.receipt_no || '—' }),
+      el('td', {}, el('div', { class: 'adm-badges' }, badge(TX_STATUS[x.status] || [x.status, '']), ...flags)),
+      el('td', { class: 'actions' }, rowMenu(`Actions for ${x.payer_name}`, txActions(x))),
+    );
+  }
+
+  // ------------------------------------------------------------ transaction details (drawer)
+
+  const txDrawer = $('#tx-drawer');
+  let currentTx = null;
+  async function openTx(id) {
+    let d;
+    try { d = await api('GET', `/api/admin/transactions/${id}`); } catch (err) { toast(err.message, 'error'); return; }
+    await financeOptions();
+    const x = d.transaction;
+    currentTx = x;
+    $('#txd-title').textContent = `${typeLabel(x.type)} · ${txAmount(x)}`;
+    $('#txd-sub').textContent = `${TX_STATUS[x.status]?.[0] || x.status}${x.receipt_no ? ` · receipt ${x.receipt_no}` : ''}`;
+    const flags = [];
+    const alertBox = (tone, text) => el('div', { class: `adm-alert adm-alert-${tone}` }, icon(tone === 'danger' ? 'alert' : 'info'), el('p', { text }));
+    if (x.status === 'void') flags.push(alertBox('danger', `Void: ${x.void_reason} (${x.voided_by}, ${when(x.voided_at)})`));
+    if (x.self_verified) flags.push(alertBox('danger', 'Verified by the same admin who recorded it (four-eyes check was off). Flagged in the audit log.'));
+    if (x.status === 'pending' && x.recorded_by === me.username && d.requireSecondVerifier) flags.push(alertBox('info', 'You recorded this payment, so another admin must verify it.'));
+    if (x.amount_gbp == null) flags.push(alertBox('warning', `No exchange rate yet. Edit the payment and enter how many ${x.currency} made £1 on ${fmtDate(x.date_received)}.`));
+    if (x.type === 'donation' && x.donor_kenyan !== 'yes') flags.push(alertBox('warning', `The donor has not declared they are a Kenyan citizen (declaration: ${x.donor_kenyan || 'unknown'}).`));
+    $('#txd-flags').replaceChildren(...flags);
+    const dl = $('#txd-details');
+    dl.replaceChildren();
+    row(dl, 'Received', fmtDate(x.date_received));
+    row(dl, 'Paid by', `${x.payer_name}${x.payer_email ? ` <${x.payer_email}>` : ''}`);
+    if (x.member_id) rowNode(dl, 'Member', el('button', { type: 'button', class: 'adm-link-btn', onclick: () => { txDrawer.close(); openMember(x.member_id); } }, `${x.member_name || ''} (${x.member_reference})`));
+    if (x.donation_id) rowNode(dl, 'Pledge', el('button', { type: 'button', class: 'adm-link-btn', onclick: () => { txDrawer.close(); openDonationById(x.donation_id); } }, x.donation_reference));
+    row(dl, 'Amount', txAmount(x));
+    if (x.currency !== 'GBP') {
+      row(dl, 'Exchange rate', x.fx_rate ? `1 GBP = ${Number(x.fx_rate)} ${x.currency} (entered by hand)` : 'Not entered yet');
+      row(dl, 'GBP equivalent', x.amount_gbp == null ? '–' : `${gbp(x.amount_gbp)} (fixed when recorded)`);
+    }
+    row(dl, 'Method', methodLabel(x.method));
+    row(dl, 'Paid into', x.account_label || ACCOUNT_SHORT[x.account]);
+    row(dl, 'Reference', x.external_ref);
+    if (x.type === 'donation') row(dl, 'Kenyan citizen (declared)', x.donor_kenyan || 'unknown');
+    row(dl, 'Notes', x.notes);
+    row(dl, 'Recorded', `${x.recorded_by}, ${when(x.recorded_at)}${x.source === 'member_report' ? ' (reported by the member)' : ''}`);
+    if (x.verified_by) row(dl, 'Verified', `${x.verified_by}, ${when(x.verified_at)}`);
+    if (x.reconciled_by) row(dl, 'Reconciled', `${x.reconciled_by}, ${when(x.reconciled_at)}`);
+    if (x.rejected_reason) row(dl, 'Rejected because', x.rejected_reason);
+    $('#txd-history').replaceChildren(...d.history.map((h) => el('li', {},
+      el('span', { class: 'adm-timeline-when', text: when(h.at) }),
+      el('span', {}, el('strong', { text: h.actor }), ` ${h.summary || h.action}`),
+      h.flags ? el('span', { class: 'adm-badge bad', text: h.flags.replace(/_/g, ' ') }) : '')));
+    $('#txd-actions').replaceChildren(el('span', { class: 'adm-spacer' }), ...txActions(x, true).map((a) => el('button', {
+      type: 'button', class: `adm-btn ${a.primary ? 'adm-btn-primary' : a.danger ? 'adm-btn-danger' : 'adm-btn-outline'}`, onclick: a.onClick,
+    }, icon(a.icon), a.text)));
+    alertIn(txDrawer, '');
+    if (!txDrawer.open) txDrawer.showModal();
+  }
+
+  // ------------------------------------------------------------ record payment (drawer)
+
+  const rpd = $('#rp-drawer');
+  const rpf = $('#rpd-form');
+  let rp = { editId: null, member: null, accountTouched: false, pledges: null };
+  const RP_FIELDS = { type: 'rpd-type', memberId: 'rpd-member-input', donationId: 'rpd-pledge', payerName: 'rpd-payer', payerEmail: 'rpd-payer-email',
+    amount: 'rpd-amount', currency: 'rpd-currency', fxRate: 'rpd-rate', method: 'rpd-method', account: 'rpd-account', dateReceived: 'rpd-date',
+    externalRef: 'rpd-ref', donorKenyan: 'rpd-kenyan', notes: 'rpd-notes' };
+  function rpErrors(fields = {}) {
+    $$('.adm-field', rpf).forEach((f) => { f.classList.remove('invalid'); $('.adm-field-error', f)?.remove(); });
+    let first = null;
+    for (const [key, message] of Object.entries(fields)) {
+      const input = document.getElementById(RP_FIELDS[key] || '');
+      const wrap = input?.closest('.adm-field');
+      if (!wrap) continue;
+      wrap.classList.add('invalid');
+      wrap.append(el('span', { class: 'adm-field-error', text: message }));
+      first ||= input;
+    }
+    first?.focus();
+  }
+  const defaultAccount = (type) => (isFeeType(type) || type === 'refund' ? 'fee_account' : type === 'donation' ? 'donations_account' : 'other');
+  function syncRp() {
+    const type = $('#rpd-type').value;
+    const cur = $('#rpd-currency').value;
+    const show = {
+      member: isFeeType(type) || type === 'refund',
+      pledge: type === 'donation',
+      payer: !rp.member,
+      kenyan: type === 'donation',
+      fx: cur !== 'GBP',
+    };
+    $$('[data-show]', rpf).forEach((n) => { n.hidden = !show[n.dataset.show]; });
+    $('#rpd-rate-cur').textContent = cur;
+    const amount = Number($('#rpd-amount').value);
+    const rate = Number($('#rpd-rate').value);
+    $('#rpd-gbp').textContent = cur === 'GBP' ? '' : amount > 0 && rate > 0 ? gbp(Math.round((amount / rate) * 100) / 100) : 'Enter the amount and rate';
+    if (!rp.accountTouched) $('#rpd-account').value = defaultAccount(type);
+    if (show.pledge && !rp.pledges) loadPledgeOptions();
+  }
+  async function loadPledgeOptions(selectedId) {
+    rp.pledges = (await api('GET', '/api/admin/donations?status=pledged&pageSize=100&sort=pledged&dir=desc').catch(() => ({ donations: [] }))).donations;
+    const s = $('#rpd-pledge');
+    const keep = selectedId || s.value;
+    s.replaceChildren(el('option', { value: '', text: 'Not linked to a pledge' }), ...rp.pledges.map((p) => el('option', { value: String(p.id), text: `${p.reference} · ${p.full_name} · ${gbp(p.amount_gbp)}` })));
+    if (keep && !rp.pledges.some((p) => String(p.id) === String(keep)) && rp.extraPledge) {
+      s.append(el('option', { value: String(rp.extraPledge.id), text: `${rp.extraPledge.reference} · ${rp.extraPledge.full_name} · ${gbp(rp.extraPledge.amount_gbp)}` }));
+    }
+    s.value = keep ? String(keep) : '';
+  }
+  $('#rpd-pledge').addEventListener('change', () => {
+    const p = (rp.pledges || []).find((x) => String(x.id) === $('#rpd-pledge').value);
+    if (!p) return;
+    if (!$('#rpd-payer').value) $('#rpd-payer').value = p.full_name;
+    if (!$('#rpd-payer-email').value) $('#rpd-payer-email').value = p.email;
+    if (!$('#rpd-amount').value) $('#rpd-amount').value = p.amount_gbp;
+    $('#rpd-kenyan').value = p.donor_kenyan || 'unknown';
+    syncRp();
+  });
+  ['#rpd-type', '#rpd-currency', '#rpd-amount', '#rpd-rate'].forEach((s) => $(s).addEventListener('input', syncRp));
+  $('#rpd-account').addEventListener('change', () => { rp.accountTouched = true; });
+
+  // Member picker
+  const mInput = $('#rpd-member-input');
+  const mList = $('#rpd-member-list');
+  let mOptions = [];
+  async function setRpMember(m) {
+    rp.member = m;
+    mInput.value = m ? `${m.full_name} (${m.reference})` : '';
+    mList.hidden = true;
+    mInput.setAttribute('aria-expanded', 'false');
+    $('#rpd-member-balance').textContent = '';
+    if (m) {
+      const { finance: f } = await api('GET', `/api/admin/members/${m.id}/finance`).catch(() => ({}));
+      if (f) {
+        $('#rpd-member-balance').textContent = `${f.tier ? f.tier.name : 'No tier'} · ${f.balance > 0 ? `${gbp(f.balance)} due` : 'nothing due'}${f.pending ? ` · ${gbp(f.pending)} already pending` : ''}`;
+        if (f.tier && isFeeType($('#rpd-type').value) && !rp.editId) $('#rpd-type').value = f.tier.txType;
+        if (!$('#rpd-amount').value && f.balance > 0 && !rp.editId) $('#rpd-amount').value = f.balance;
+      }
+    }
+    syncRp();
+  }
+  mInput.addEventListener('input', debounce(async () => {
+    if (rp.member) { rp.member = null; syncRp(); }
+    const q = mInput.value.trim();
+    if (q.length < 2) { mList.hidden = true; return; }
+    const { members } = await api('GET', `/api/admin/members?q=${encodeURIComponent(q)}&pageSize=8`).catch(() => ({ members: [] }));
+    mOptions = members;
+    mList.replaceChildren(...(members.length ? members.map((m, i) => el('div', {
+      class: 'adm-gsearch-item', role: 'option', id: `rpm-${i}`, 'aria-selected': String(i === 0), onmousedown: (e) => { e.preventDefault(); setRpMember(m); },
+    }, icon('user'), el('div', {}, el('strong', { text: m.full_name }), el('span', { text: `${m.reference} · ${m.tier_name || 'no tier'} · ${m.chapter || ''}` })))) : [el('p', { class: 'adm-gsearch-empty', text: 'No matching members.' })]));
+    mList.hidden = false;
+    mInput.setAttribute('aria-expanded', 'true');
+  }, 200));
+  mInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !mList.hidden && mOptions[0]) { e.preventDefault(); setRpMember(mOptions[0]); }
+    if (e.key === 'Escape' && !mList.hidden) { e.preventDefault(); e.stopPropagation(); mList.hidden = true; }
+  });
+  mInput.addEventListener('blur', () => setTimeout(() => { mList.hidden = true; }, 150));
+
+  async function openRecordPayment(pre = {}) {
+    await financeOptions();
+    rpf.reset();
+    rp = { editId: pre.editId || null, member: null, accountTouched: Boolean(pre.account), pledges: null, extraPledge: pre.donation || null };
+    alertIn(rpd, '');
+    rpErrors();
+    const opt = (v, t) => el('option', { value: v, text: t });
+    $('#rpd-type').replaceChildren(...Object.entries(finOpts.types).map(([k, t]) => opt(k, t.label)));
+    $('#rpd-method').replaceChildren(...Object.entries(finOpts.methods).map(([k, t]) => opt(k, t)));
+    $('#rpd-account').replaceChildren(...Object.entries(finOpts.accounts).map(([k, t]) => opt(k, t)));
+    $('#rpd-type').value = pre.type || (pre.donation ? 'donation' : 'membership_fee');
+    $('#rpd-currency').value = pre.currency || 'GBP';
+    $('#rpd-amount').value = pre.amount ?? '';
+    $('#rpd-rate').value = pre.fxRate ?? '';
+    $('#rpd-method').value = pre.method || 'bank_transfer';
+    $('#rpd-account').value = pre.account || defaultAccount($('#rpd-type').value);
+    $('#rpd-date').value = pre.dateReceived || todayIso();
+    $('#rpd-date').max = todayIso();
+    $('#rpd-ref').value = pre.externalRef || '';
+    $('#rpd-notes').value = pre.notes || '';
+    $('#rpd-payer').value = pre.payerName || pre.donation?.full_name || '';
+    $('#rpd-payer-email').value = pre.payerEmail || pre.donation?.email || '';
+    $('#rpd-kenyan').value = pre.donorKenyan || pre.donation?.donor_kenyan || 'unknown';
+    if (pre.donation && pre.amount == null) $('#rpd-amount').value = pre.donation.amount_gbp;
+    $('#rpd-title').textContent = rp.editId ? 'Edit pending payment' : 'Record payment';
+    $('#rpd-save').textContent = rp.editId ? 'Save changes' : 'Save as pending';
+    $('#rpd-sub').textContent = finOpts.settings.requireSecondVerifier
+      ? 'Saved as pending. A different admin must verify it before it counts.'
+      : 'Saved as pending until it is verified. Four-eyes check is off: verifying your own entry is flagged.';
+    syncRp();
+    if ($('#rpd-type').value === 'donation') await loadPledgeOptions(pre.donation?.id || pre.donationId);
+    await setRpMember(pre.member || null);
+    if (!rpd.open) rpd.showModal();
+    (pre.member ? $('#rpd-amount') : $('#rpd-type')).focus();
+  }
+  async function editTx(id) {
+    try {
+      const { transaction: x } = await api('GET', `/api/admin/transactions/${id}`);
+      if (txDrawer.open) txDrawer.close();
+      await openRecordPayment({
+        editId: x.id, type: x.type, amount: x.amount, currency: x.currency, fxRate: x.fx_rate ?? '', method: x.method, account: x.account,
+        dateReceived: String(x.date_received).slice(0, 10), externalRef: x.external_ref, notes: x.notes, payerName: x.payer_name, payerEmail: x.payer_email,
+        donorKenyan: x.donor_kenyan, donationId: x.donation_id,
+        member: x.member_id ? { id: x.member_id, full_name: x.member_name || x.payer_name, reference: x.member_reference } : null,
+      });
+    } catch (err) { toast(err.message, 'error'); }
+  }
+  rpf.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const body = {
+      type: $('#rpd-type').value, memberId: rp.member?.id || null, donationId: $('#rpd-type').value === 'donation' ? $('#rpd-pledge').value || null : null,
+      payerName: rp.member ? '' : $('#rpd-payer').value, payerEmail: rp.member ? '' : $('#rpd-payer-email').value,
+      amount: $('#rpd-amount').value, currency: $('#rpd-currency').value, fxRate: $('#rpd-currency').value === 'GBP' ? 1 : $('#rpd-rate').value,
+      method: $('#rpd-method').value, account: $('#rpd-account').value, dateReceived: $('#rpd-date').value,
+      externalRef: $('#rpd-ref').value, donorKenyan: $('#rpd-kenyan').value, notes: $('#rpd-notes').value,
+    };
+    rpErrors();
+    try {
+      await busy(rpf, () => api(rp.editId ? 'PUT' : 'POST', rp.editId ? `/api/admin/transactions/${rp.editId}` : '/api/admin/transactions', body));
+      rpd.close();
+      toast(rp.editId ? 'Pending payment updated.' : finOpts.settings.requireSecondVerifier ? 'Recorded as pending. Another admin must verify it.' : 'Recorded as pending.');
+      afterTxChange();
+    } catch (err) {
+      alertIn(rpd, err.message);
+      const res = err.fields || {};
+      rpErrors(res);
+    }
+  });
+  $('#rpd-close').addEventListener('click', () => rpd.close());
+  $('#rpd-cancel').addEventListener('click', () => rpd.close());
+  $('#tx-record').addEventListener('click', () => openRecordPayment());
+
+  // ------------------------------------------------------------ member dialog: fees
+
+  async function loadMemberFinance(m) {
+    const { finance: f, transactions } = await api('GET', `/api/admin/members/${m.id}/finance`);
+    const fig = (label, value, tone) => el('div', { class: `adm-fig${tone ? ` ${tone}` : ''}` }, el('span', { text: label }), el('strong', { text: value }));
+    $('#md-figures').replaceChildren(
+      fig('Tier', f.tier ? `${f.tier.name} (${gbp(f.tier.amount)}${f.tier.renewal === 'yearly' ? ' a year' : ', once'})` : 'None'),
+      fig(f.tier?.renewal === 'yearly' ? `Due (${f.periods} year${f.periods === 1 ? '' : 's'})` : 'Due', gbp(f.due)),
+      fig('Paid (verified)', gbp(f.paid)),
+      fig('Balance', f.balance > 0 ? `${gbp(f.balance)} due` : f.balance < 0 ? `${gbp(-f.balance)} in credit` : 'Up to date', f.balance > 0 ? 'bad' : 'good'),
+      fig(f.paidUntil ? 'Paid until' : f.nextRenewal ? 'Renews' : 'Membership start', f.paidUntil ? fmtDate(f.paidUntil) : f.nextRenewal ? fmtDate(f.nextRenewal) : fmtDate(f.membershipStart) || '–'),
+      f.pending ? fig('Awaiting verification', gbp(f.pending), 'warn') : '',
+    );
+    const review = $('#md-review');
+    review.hidden = !f.feeReview;
+    review.replaceChildren(icon('alert'), el('p', {}, el('strong', { text: 'Fee needs review. ' }), f.feeReviewReason || ''),
+      canDo('finance.write') ? el('button', { type: 'button', class: 'adm-btn adm-btn-outline adm-btn-sm', onclick: async () => {
+        const note = await askReason({ title: 'Clear the fee review?', sub: 'Say what you checked. It is added to the notes and the audit log.', confirm: 'Clear review' });
+        if (!note) return;
+        try { await api('PATCH', `/api/admin/members/${m.id}`, { feeReviewResolved: true, feeReviewNote: note }); toast('Fee review cleared.'); loadMemberFinance(m); tables.members.load().catch(() => {}); } catch (err) { toast(err.message, 'error'); }
+      } }, 'Mark reviewed') : '');
+    $('#md-tx').replaceChildren(...(transactions.length ? transactions.map((x) => el('li', {}, el('button', { type: 'button', onclick: () => openTx(x.id) },
+      el('span', { text: fmtDate(x.date_received) }), el('span', { text: typeLabel(x.type) }), el('strong', { text: txAmount(x) }),
+      badge(TX_STATUS[x.status] || [x.status, '']), x.receipt_no ? el('span', { class: 'mono', text: x.receipt_no }) : ''))) : [el('li', { class: 'adm-muted', text: 'No payments recorded yet.' })]));
+    $('#md-pay').onclick = () => openRecordPayment({ member: m, type: f.tier?.txType, amount: f.balance > 0 ? f.balance : undefined });
+  }
+
+  // ------------------------------------------------------------ donation dialog: payments
+
+  async function loadDonationPayments(d) {
+    const { transactions } = await api('GET', `/api/admin/donations/${d.id}`);
+    $('#dd-tx').replaceChildren(...(transactions.length ? transactions.map((x) => el('li', {}, el('button', { type: 'button', onclick: () => openTx(x.id) },
+      el('span', { text: fmtDate(x.date_received) }), el('strong', { text: money(x.amount, x.currency) }), badge(TX_STATUS[x.status] || [x.status, '']),
+      x.receipt_no ? el('span', { class: 'mono', text: x.receipt_no }) : ''))) : [el('li', { class: 'adm-muted', text: 'No payment recorded yet. The pledge becomes Received when one is verified.' })]));
+    const pay = $('#dd-pay');
+    pay.hidden = d.status === 'cancelled';
+    pay.onclick = () => openRecordPayment({ donation: d });
+  }
+
+  // ------------------------------------------------------------ reports
+
+  function reportQuery(extra = {}) {
+    const p = new URLSearchParams();
+    for (const [k, id] of [['from', '#rp-from'], ['to', '#rp-to'], ['type', '#rp-type'], ['method', '#rp-method'], ['chapter', '#rp-chapter']]) if ($(id).value) p.set(k, $(id).value);
+    for (const [k, v] of Object.entries(extra)) if (v) p.set(k, v);
+    return p;
+  }
+  function setRange(kind) {
+    const t = new Date();
+    const y = t.getUTCFullYear();
+    const m = t.getUTCMonth();
+    const iso = (d) => d.toISOString().slice(0, 10);
+    const from = kind === 'month' ? new Date(Date.UTC(y, m, 1)) : kind === 'quarter' ? new Date(Date.UTC(y, m - (m % 3), 1)) : kind === 'year' ? new Date(Date.UTC(y, 0, 1)) : new Date(Date.UTC(y - 1, m, t.getUTCDate() + 1));
+    $('#rp-from').value = iso(from);
+    $('#rp-to').value = iso(t);
+  }
+  $$('[data-range]').forEach((b) => b.addEventListener('click', () => { setRange(b.dataset.range); loadReports().catch((err) => toast(err.message, 'error')); }));
+  ['#rp-from', '#rp-to', '#rp-type', '#rp-method', '#rp-chapter'].forEach((s) => $(s).addEventListener('change', () => loadReports().catch((err) => toast(err.message, 'error'))));
+  $('#rp-period').addEventListener('change', () => setExportLinks());
+
+  function setExportLinks() {
+    $$('a[data-export]').forEach((a) => {
+      const kind = a.dataset.export;
+      const p = kind === 'outstanding' ? tables.reports.params({ paging: false }) : reportQuery(kind === 'donors' ? { period: $('#rp-period').value } : {});
+      p.set('kind', kind);
+      p.set('format', a.dataset.format);
+      a.href = `/api/admin/reports/export?${p}`;
+    });
+  }
+
+  const miniTable = (target, rows, labelOf) => $(target).replaceChildren(
+    el('thead', {}, el('tr', {}, el('th', { text: '' }), el('th', { text: 'Count' }), el('th', { text: 'GBP' }))),
+    el('tbody', {}, ...(rows.length ? rows.map((r) => el('tr', {}, el('td', { text: labelOf(r) }), el('td', { text: String(r.n) }), el('td', { class: r.gbp < 0 ? 'adm-out' : '', text: gbp(r.gbp) })))
+      : [el('tr', {}, el('td', { colspan: '3', class: 'adm-muted', text: 'Nothing in this period.' }))])));
+
+  async function loadReports() {
+    await financeOptions();
+    if (!$('#rp-from').value) setRange('year');
+    const s = await api('GET', `/api/admin/reports/summary?${reportQuery()}`);
+    const kpi = (label, value, sub, tone) => el('div', { class: 'adm-card adm-kpi' }, el('span', { class: 'adm-kpi-label', text: label }), el('strong', { class: tone || '', text: value }), el('span', { class: 'adm-kpi-sub', text: sub }));
+    $('#rp-kpis').replaceChildren(
+      kpi('Money in', gbp(s.totals.income), `${s.totals.n} verified transactions`),
+      kpi('Money out', gbp(s.totals.out), 'Refunds and expenses', s.totals.out ? 'adm-out' : ''),
+      kpi('Net', gbp(s.totals.net), `${fmtDate(s.from)} – ${fmtDate(s.to)}`),
+      kpi('Awaiting verification', gbp(s.pending.gbp), `${s.pending.n} pending${s.pending.noRate ? `, ${s.pending.noRate} without a rate` : ''}`, s.pending.n ? 'warn' : ''),
+    );
+    drawChart('rp-month', $('#chart-rp-month'), (t) => ({
+      chart: baseChart(t, { type: 'bar', height: 280, stacked: false }),
+      series: [{ name: 'Money in', data: s.byMonth.map((r) => r.income) }, { name: 'Money out', data: s.byMonth.map((r) => r.out) }],
+      xaxis: { categories: s.byMonth.map((r) => new Date(`${r.month}-01T00:00:00Z`).toLocaleDateString('en-GB', { month: 'short', year: '2-digit', timeZone: 'UTC' })), labels: { style: { colors: t.muted } } },
+      yaxis: { labels: { style: { colors: t.muted }, formatter: (v) => `£${Math.round(v)}` } },
+      colors: [t.bar, cssVar('--accent-2')],
+      plotOptions: { bar: { columnWidth: '55%', borderRadius: 4 } },
+      grid: { borderColor: t.border, strokeDashArray: 4 },
+      dataLabels: { enabled: false }, legend: { labels: { colors: t.text } },
+      tooltip: { theme: t.dark ? 'dark' : 'light', y: { formatter: (v) => gbp(v) } },
+      noData: { text: 'No verified money in this period', style: { color: t.muted } },
+    }));
+    miniTable('#rp-by-type', s.byType, (r) => r.label);
+    miniTable('#rp-by-method', s.byMethod, (r) => r.label);
+    miniTable('#rp-by-chapter', s.byChapter, (r) => r.k);
+    const dec = Object.fromEntries(s.donations.byDeclaration.map((r) => [r.k, r]));
+    $('#rp-donations').replaceChildren(el('dl', { class: 'adm-details' },
+      el('dt', { text: 'Pledges made' }), el('dd', { text: `${s.donations.pledges} (${gbp(s.donations.pledgedGbp)})` }),
+      el('dt', { text: 'Received / still open' }), el('dd', { text: `${s.donations.received} / ${s.donations.open}` }),
+      el('dt', { text: 'Verified: Kenyan "yes"' }), el('dd', { text: `${dec.yes?.n || 0} (${gbp(dec.yes?.gbp || 0)})` }),
+      el('dt', { text: 'Verified: flagged' }), el('dd', { class: (dec.no?.n || dec.unknown?.n) ? 'adm-flagged' : '', text: `${(dec.no?.n || 0) + (dec.unknown?.n || 0)} (${gbp((dec.no?.gbp || 0) + (dec.unknown?.gbp || 0))}): ${dec.no?.n || 0} no, ${dec.unknown?.n || 0} unknown` })));
+    setExportLinks();
+    await tables.reports.load();
+  }
+
+  // Outstanding fees table + reminders
+  const outSelected = new Set();
+  function outRow(m) {
+    const box = el('input', { type: 'checkbox', class: 'adm-check', 'aria-label': `Select ${m.full_name}`, onclick: (e) => e.stopPropagation(),
+      onchange: (e) => { if (e.target.checked) outSelected.add(m.id); else outSelected.delete(m.id); syncRemind(); } });
+    box.checked = outSelected.has(m.id);
+    return el('tr', { class: 'clickable', tabindex: '0', onclick: () => openMember(m.id), onkeydown: (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) openMember(m.id); } },
+      el('td', {}, box),
+      el('td', {}, el('div', {}, el('strong', { text: m.full_name }), el('span', { class: 'sub', text: `${m.reference} · ${m.status}` }))),
+      el('td', { class: 'col-contact', text: m.chapter || '—' }),
+      el('td', { text: m.tier_name || '—' }),
+      el('td', { class: 'amount adm-out', text: gbp(m.balance) }),
+      el('td', { class: 'when col-reg', text: m.last_paid ? fmtDate(m.last_paid) : 'Never' }),
+      el('td', { class: 'actions' }, rowMenu(`Actions for ${m.full_name}`, [
+        { icon: 'eye', text: 'Open member', onClick: () => openMember(m.id) },
+        canDo('finance.write') && { icon: 'cash', text: 'Record payment', onClick: () => openRecordPayment({ member: m, amount: m.balance }) },
+      ])));
+  }
+  function syncRemind() {
+    const b = $('#out-remind');
+    b.disabled = !outSelected.size;
+    b.lastChild.textContent = outSelected.size ? `Send reminders (${outSelected.size})` : 'Send reminders';
+    const pageBoxes = $$('#out-body .adm-check');
+    $('#out-all').checked = pageBoxes.length > 0 && pageBoxes.every((c) => c.checked);
+  }
+  $('#out-all').addEventListener('change', (e) => { $$('#out-body .adm-check').forEach((c) => { c.checked = e.target.checked; c.dispatchEvent(new Event('change')); }); });
+  $('#out-remind').addEventListener('click', async () => {
+    const n = outSelected.size;
+    if (!n || !confirm(`Email a payment reminder to ${n} member${n === 1 ? '' : 's'}? Each gets one service email about their own balance.`)) return;
+    try {
+      const r = await api('POST', '/api/admin/reports/outstanding/remind', { memberIds: [...outSelected] });
+      toast(`Reminders queued for ${r.sent} member${r.sent === 1 ? '' : 's'}${r.skipped ? ` (${r.skipped} skipped: nothing due)` : ''}. They appear in Email → Sent.`);
+      outSelected.clear();
+      syncRemind();
+      tables.reports.load();
+    } catch (err) { toast(err.message, 'error'); }
+  });
+
+  // ------------------------------------------------------------ audit log
+
+  const ACTION_TEXT = {
+    'transaction.recorded': 'Recorded a payment', 'transaction.edited': 'Edited a pending payment', 'transaction.verified': 'Verified a payment',
+    'transaction.reconciled': 'Reconciled a payment', 'transaction.rejected': 'Rejected a payment', 'transaction.voided': 'Voided a transaction',
+    'member.updated': 'Updated a member', 'member.rejected': 'Rejected a member', 'member.deleted': 'Deleted a member', 'member.payment_synced': 'Payment status updated',
+    'donation.updated': 'Updated a pledge', 'donation.cancelled': 'Cancelled a pledge', 'donation.status_synced': 'Pledge status updated',
+    'settings.finance': 'Changed finance settings', 'settings.payment_account': 'Changed a payment account', 'tier.updated': 'Changed a tier',
+    'admin.created': 'Added an admin', 'admin.role_changed': 'Changed an admin role', 'admin.password_changed': 'Changed password', 'reminders.sent': 'Sent payment reminders',
+  };
+  function auditRow(a) {
+    const open = { transaction: () => openTx(a.entity_id), member: () => openMember(a.entity_id), donation: () => openDonationById(a.entity_id) }[a.entity];
+    let details = '';
+    if (a.before_json || a.after_json) {
+      const before = a.before_json ? JSON.parse(a.before_json) : {};
+      const after = a.after_json ? JSON.parse(a.after_json) : {};
+      const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])];
+      details = el('details', { class: 'adm-audit-diff' }, el('summary', { text: `${keys.length} field${keys.length === 1 ? '' : 's'}` }),
+        el('table', {}, el('thead', {}, el('tr', {}, el('th', { text: 'Field' }), el('th', { text: 'Before' }), el('th', { text: 'After' }))),
+          el('tbody', {}, ...keys.map((k) => el('tr', {}, el('td', { text: k }), el('td', { text: before[k] == null ? '–' : String(before[k]) }), el('td', { text: after[k] == null ? '–' : String(after[k]) }))))));
+    }
+    return el('tr', { class: a.flags ? 'adm-flag-row' : '' },
+      el('td', { class: 'when', text: when(a.at) }),
+      el('td', {}, el('div', {}, el('span', { class: 'adm-email', title: a.actor, text: a.actor }), a.actor_type !== 'admin' ? el('span', { class: 'sub', text: a.actor_type }) : null)),
+      el('td', {}, el('div', {}, el('strong', { text: ACTION_TEXT[a.action] || a.action }), el('span', { class: 'sub', text: a.summary || '' }),
+        a.flags ? el('span', { class: 'adm-badge bad', text: a.flags.replace(/_/g, ' ') }) : null)),
+      el('td', { class: 'col-contact' }, open ? el('button', { type: 'button', class: 'adm-link-btn', onclick: open }, `${a.entity} #${a.entity_id}`) : `${a.entity}${a.entity_id ? ` ${a.entity_id}` : ''}`),
+      el('td', {}, details),
+    );
+  }
+
+  // ------------------------------------------------------------ payment accounts: tiers and finance settings
+
+  function tierRow(t) {
+    const f = el('form', { class: 'adm-tier', novalidate: '' },
+      el('div', { class: 'adm-field' }, el('label', { for: `tier-name-${t.id}`, text: 'Name' }), el('input', { id: `tier-name-${t.id}`, name: 'name', value: t.name, maxlength: '80' })),
+      el('div', { class: 'adm-field' }, el('label', { for: `tier-amount-${t.id}`, text: 'Amount (£)' }), el('input', { id: `tier-amount-${t.id}`, name: 'amount', type: 'number', min: '0.01', step: '0.01', value: String(t.amount) })),
+      el('div', { class: 'adm-field' }, el('label', { for: `tier-renewal-${t.id}`, text: 'Renewal' }),
+        el('select', { id: `tier-renewal-${t.id}`, name: 'renewal' }, el('option', { value: 'yearly', text: 'Every year' }), el('option', { value: 'one_off', text: 'One-off' }))),
+      el('button', { type: 'submit', class: 'adm-btn adm-btn-outline adm-btn-sm' }, 'Save'),
+    );
+    f.elements.renewal.value = t.renewal;
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      try {
+        await busy(f, () => api('PUT', `/api/admin/tiers/${t.id}`, { name: f.elements.name.value, amount: Number(f.elements.amount.value), renewal: f.elements.renewal.value }));
+        toast(`${f.elements.name.value} saved.`);
+        await financeOptions(true);
+      } catch (err) { toast(err.message, 'error'); }
+    });
+    if (!canDo('finance.settings')) lockForm(f, true);
+    return f;
+  }
+  async function loadFinanceSettings() {
+    const o = await financeOptions(true);
+    $('#tiers-list').replaceChildren(...o.tiers.map(tierRow), el('p', { class: 'adm-hint', text: 'Payments for each tier are recorded as that tier\'s type. Ordinary and Stakeholder renew yearly from the date fees are counted; Visit contribution is paid once.' }));
+    const fsForm = $('#finance-settings-form');
+    $('#fs-four-eyes').checked = o.settings.requireSecondVerifier;
+    $('#fs-meta').textContent = o.settings.updatedBy ? `Last changed ${when(o.settings.updatedAt)} by ${o.settings.updatedBy}.` : 'Default: on.';
+    alertIn(fsForm, '');
+    lockForm(fsForm, !canDo('finance.settings'));
+    lockForm($('#fee-form'), !canDo('finance.settings'));
+    lockForm($('#donation-form'), !canDo('finance.settings'));
+  }
+  $('#finance-settings-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.currentTarget;
+    const on = $('#fs-four-eyes').checked;
+    if (!on && !confirm('Turn off the four-eyes check? Admins will be able to verify payments they recorded themselves (each one is flagged).')) return;
+    try {
+      await busy(f, () => api('PUT', '/api/admin/finance-settings', { requireSecondVerifier: on }));
+      toast(on ? 'Four-eyes check is on.' : 'Four-eyes check is off. Self-verified payments will be flagged.', on ? 'success' : 'info');
+      loadFinanceSettings();
+    } catch (err) { alertIn(f, err.message); }
+  });
+
+  // ------------------------------------------------------------ admin users: roles
+
+  const ROLE_LABELS = { super_admin: 'Super admin', treasurer: 'Treasurer', membership_secretary: 'Membership secretary' };
+  async function changeRole(a, role) {
+    if (!confirm(`Make ${a.username} a ${ROLE_LABELS[role]}?`)) return;
+    try { await api('PATCH', `/api/admin/admins/${a.id}`, { role }); toast(`${a.username} is now a ${ROLE_LABELS[role]}.`); tables.users.load(); } catch (err) { toast(err.message, 'error'); }
+  }
+
   // ------------------------------------------------------------ table instances
 
   const tables = {
@@ -1799,18 +2479,48 @@
     members: createTable({
       name: 'members', prefix: 'm', endpoint: '/api/admin/members', listKey: 'members', noun: 'member',
       body: $('#members-body'), countId: 'members-count', pagerId: 'members-pager', render: memberRow,
-      fields: { q: $('#m-search'), status: $('#m-status'), payment: $('#m-payment'), chapter: $('#m-chapter'), from: $('#m-from'), to: $('#m-to') },
-      labels: { q: 'Search', status: 'Status', payment: 'Payment', chapter: 'Chapter', from: 'From', to: 'To' },
+      fields: { q: $('#m-search'), status: $('#m-status'), payment: $('#m-payment'), chapter: $('#m-chapter'), tier: $('#m-tier'), review: $('#m-review'), from: $('#m-from'), to: $('#m-to') },
+      labels: { q: 'Search', status: 'Status', payment: 'Payment', chapter: 'Chapter', tier: 'Tier', review: 'Fee', from: 'From', to: 'To' },
       defaultSort: 'registered', exportLink: $('#m-export'), exportPath: '/api/admin/members.csv',
       empty: { title: 'No registrations yet', filteredTitle: 'No matching members', text: 'New registrations from the Membership page appear here.' },
     }),
     donations: createTable({
       name: 'donations', prefix: 'd', endpoint: '/api/admin/donations', listKey: 'donations', noun: 'pledge',
       body: $('#donations-body'), countId: 'donations-count', pagerId: 'donations-pager', render: donationRow,
-      fields: { q: $('#d-search'), status: $('#d-status'), from: $('#d-from'), to: $('#d-to') },
-      labels: { q: 'Search', status: 'Status', from: 'From', to: 'To' },
+      fields: { q: $('#d-search'), status: $('#d-status'), kenyan: $('#d-kenyan'), from: $('#d-from'), to: $('#d-to') },
+      labels: { q: 'Search', status: 'Status', kenyan: 'Declaration', from: 'From', to: 'To' },
       defaultSort: 'pledged', exportLink: $('#d-export'), exportPath: '/api/admin/donations.csv',
       empty: { title: 'No donation pledges yet', filteredTitle: 'No matching pledges', text: 'Pledges made on the Donate page appear here.' },
+    }),
+    transactions: createTable({
+      name: 'transactions', prefix: 'tx', endpoint: '/api/admin/transactions', listKey: 'transactions', noun: 'transaction',
+      body: $('#tx-body'), countId: 'tx-count', pagerId: 'tx-pager', render: txRow,
+      fields: { q: $('#tx-search'), type: $('#tx-type'), method: $('#tx-method'), status: $('#tx-status'), account: $('#tx-account'), flag: $('#tx-flag'), from: $('#tx-from'), to: $('#tx-to'), min: $('#tx-min'), max: $('#tx-max') },
+      labels: { q: 'Search', type: 'Type', method: 'Method', status: 'Status', account: 'Account', flag: 'Flag', from: 'From', to: 'To', min: 'Min £', max: 'Max £' },
+      defaultSort: 'date', exportLinks: [[$('#tx-export'), '/api/admin/transactions/export'], [$('#tx-export-xlsx'), '/api/admin/transactions/export?format=xlsx']],
+      empty: { title: 'No transactions yet', filteredTitle: 'No matching transactions', text: 'Use Record payment when money arrives.' },
+      afterLoad: (d) => {
+        $('#tx-totals').textContent = `Net ${gbp(d.totals.net_gbp)} verified in this view${Number(d.totals.pending_gbp) ? ` · ${gbp(d.totals.pending_gbp)} awaiting verification` : ''}`;
+        $('#tx-four-eyes-off').hidden = d.requireSecondVerifier;
+        if (finOpts) finOpts.settings.requireSecondVerifier = d.requireSecondVerifier;
+      },
+    }),
+    reports: createTable({
+      name: 'reports', prefix: 'out', endpoint: '/api/admin/reports/outstanding', listKey: 'members', noun: 'member',
+      body: $('#out-body'), countId: 'out-count', pagerId: 'out-pager', render: outRow,
+      fields: { q: $('#out-search'), chapter: $('#out-chapter'), tier: $('#out-tier'), status: $('#out-status') },
+      labels: { q: 'Search', chapter: 'Chapter', tier: 'Tier', status: 'Status' },
+      defaultSort: 'balance',
+      empty: { title: 'Nobody owes anything', filteredTitle: 'No matching members', text: 'Every member is up to date.' },
+      afterLoad: (d) => { $('#out-total').textContent = `${plural(d.total, 'member')} owe ${gbp(d.owed)} in total`; syncRemind(); setExportLinks(); },
+    }),
+    audit: createTable({
+      name: 'audit', prefix: 'au', endpoint: '/api/admin/audit', listKey: 'entries', noun: 'entry', nounPlural: 'entries',
+      body: $('#au-body'), countId: 'au-count', pagerId: 'au-pager', render: auditRow,
+      fields: { q: $('#au-search'), entity: $('#au-entity'), flagged: $('#au-flagged'), actor: $('#au-actor'), from: $('#au-from'), to: $('#au-to') },
+      labels: { q: 'Search', entity: 'Record', flagged: 'Flag', actor: 'Who', from: 'From', to: 'To' },
+      defaultSort: 'at',
+      empty: { title: 'Nothing logged yet', filteredTitle: 'No matching entries', text: '' },
     }),
     users: createTable({
       name: 'users', prefix: 'u', endpoint: '/api/admin/admins', listKey: 'admins', noun: 'admin',

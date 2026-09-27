@@ -13,10 +13,18 @@ const { pageParams, paged, dateRange } = require('./lib/paging');
 const mailer = require('./lib/mailer');
 const email = require('./lib/email');
 const templates = require('./lib/email-templates');
+const audit = require('./lib/audit');
+const finance = require('./lib/finance');
+const { ROLES, permissions, need, can } = require('./lib/roles');
+const { sendCsv } = require('./lib/export');
+const financeRoutes = require('./routes/finance');
 
 // Feature flags: switched off until the feature is built and configured.
 const FEATURES = {
   inboundEmail: process.env.FEATURE_INBOUND_EMAIL === 'true',
+  // Online payments: only webhook stubs exist; no live payments are taken.
+  stripe: process.env.FEATURE_STRIPE === 'true',
+  mpesaStk: process.env.FEATURE_MPESA_STK === 'true',
 };
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -82,22 +90,6 @@ function submissionLimit(req, res, next) {
   next();
 }
 
-function csvCell(value) {
-  let s = value == null ? '' : String(value);
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`; // stop spreadsheet formula injection
-  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-}
-function sendCsv(res, filename, columns, rows) {
-  const lines = [columns.map(([, label]) => csvCell(label)).join(',')];
-  for (const row of rows) lines.push(columns.map(([key]) => csvCell(row[key])).join(','));
-  res.set({
-    'Content-Type': 'text/csv; charset=utf-8',
-    'Content-Disposition': `attachment; filename="${filename}"`,
-    'Cache-Control': 'no-store',
-  });
-  res.send('﻿' + lines.join('\r\n'));
-}
-
 const likeParam = (q) => `%${String(q).trim().replace(/[\\%_]/g, '\\$&')}%`;
 const orNull = (v) => (v === undefined || v === '' ? null : v);
 
@@ -135,7 +127,9 @@ app.post('/api/members', submissionLimit, async (req, res) => {
     m.addressLine1, orNull(m.addressLine2), m.town, orNull(m.county), m.postcode, feeAccount.feeAmount, feeAccount.feeCurrency]);
   const created = await db.one('SELECT id FROM members WHERE reference = ?', [reference]);
   // The form requires the data-consent declaration (validateMember); chapter news is optional.
-  await db.query(`UPDATE members SET data_consent_at = UTC_TIMESTAMP(), marketing_consent_at = ${m.marketingConsent ? 'UTC_TIMESTAMP()' : 'NULL'} WHERE id = ?`, [created.id]);
+  // New members start on the Ordinary tier, with fees counted from today.
+  await db.query(`UPDATE members SET data_consent_at = UTC_TIMESTAMP(), marketing_consent_at = ${m.marketingConsent ? 'UTC_TIMESTAMP()' : 'NULL'},
+      tier_id = (SELECT id FROM membership_tiers WHERE tkey = 'ordinary'), billing_start = UTC_DATE() WHERE id = ?`, [created.id]);
   await email.receive({
     source: 'application', fromName: m.fullName, fromEmail: m.email, memberId: created.id, labels: ['Membership'],
     subject: `New membership application: ${m.fullName}`,
@@ -150,13 +144,26 @@ app.post('/api/members', submissionLimit, async (req, res) => {
 // The applicant tells us they've paid. Only the browser that registered holds the token.
 app.post('/api/members/:reference/payment-reported', async (req, res) => {
   const token = String(req.body?.accessToken || '');
-  const row = await db.one('SELECT id, access_token_hash, payment_status FROM members WHERE reference = ?', [req.params.reference]);
+  const row = await db.one(`SELECT m.id, m.reference, m.access_token_hash, m.payment_status, m.fee_amount, m.fee_currency, t.tx_type
+    FROM members m LEFT JOIN membership_tiers t ON t.id = m.tier_id WHERE m.reference = ?`, [req.params.reference]);
   if (!row || !token || !crypto.timingSafeEqual(Buffer.from(auth.sha256(token)), Buffer.from(row.access_token_hash))) {
     return res.status(404).json({ error: 'Registration not found.' });
   }
   const note = String(req.body?.paymentNote || '').trim().slice(0, 100) || null;
   if (row.payment_status === 'pending_payment') {
     await db.query("UPDATE members SET payment_status = 'payment_reported', payment_note = ?, updated_at = UTC_TIMESTAMP() WHERE id = ?", [note, row.id]);
+    // A pending transaction for the treasurer to check against the account and verify.
+    const { value: fee } = await settings.getSetting('feeAccount');
+    try {
+      await finance.recordTransaction({
+        type: row.tx_type || 'membership_fee', amount: row.fee_amount, currency: row.fee_currency, fxRate: row.fee_currency === 'GBP' ? 1 : '',
+        method: { mpesa_paybill: 'mpesa_paybill', mpesa_till: 'mpesa_till', bank: 'bank_transfer' }[fee.method] || 'bank_transfer',
+        account: 'fee_account', memberId: row.id, dateReceived: new Date().toISOString().slice(0, 10), externalRef: note,
+        notes: 'Reported by the member on the website after registering.',
+      }, { actor: row.reference, actorType: 'member', ip: req.ip }, { source: 'member_report' });
+    } catch (err) {
+      console.error(`Could not record the reported payment for ${row.reference}:`, err.message);
+    }
   }
   res.json({ ok: true });
 });
@@ -170,9 +177,9 @@ app.post('/api/donations', submissionLimit, async (req, res) => {
   if (Object.keys(errors).length) return res.status(400).json({ error: 'Please correct the highlighted fields.', fields: errors });
 
   const reference = await newReference('DON', 'donations');
-  await db.query(`INSERT INTO donations (reference, full_name, email, amount_gbp, frequency, message, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
-  [reference, d.fullName, d.email, d.amountGbp, d.frequency, orNull(d.message)]);
+  await db.query(`INSERT INTO donations (reference, full_name, email, amount_gbp, frequency, message, donor_kenyan, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
+  [reference, d.fullName, d.email, d.amountGbp, d.frequency, orNull(d.message), d.donorKenyan]);
   res.status(201).json({ reference, amountGbp: d.amountGbp, frequency: d.frequency, donationAccount });
 });
 
@@ -221,6 +228,15 @@ app.post('/api/contact', contactLimit, async (req, res) => {
   res.status(201).json({ ok: true });
 });
 
+// Online payments (Stripe, M-Pesa Daraja STK push) are designed for but not built:
+// the flags are off by default and, even when on, these stubs take no money.
+for (const [route, flag] of [['/api/webhooks/stripe', 'stripe'], ['/api/webhooks/mpesa', 'mpesaStk']]) {
+  app.post(route, (req, res) => {
+    if (!FEATURES[flag]) return res.status(404).json({ error: 'Not found.' });
+    res.status(501).json({ error: 'Online payments are not implemented yet.' });
+  });
+}
+
 // Member replies by email arrive later, behind FEATURE_INBOUND_EMAIL.
 app.post('/api/inbound-email', (req, res) => {
   if (!FEATURES.inboundEmail) return res.status(404).json({ error: 'Not found.' });
@@ -232,8 +248,10 @@ app.post('/api/inbound-email', (req, res) => {
 const adminApi = express.Router();
 adminApi.use((req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
+const withPerms = (a) => (a ? { ...a, roleLabel: ROLES[a.role]?.label || a.role, perms: permissions(a.role) } : null);
+
 adminApi.get('/session', async (req, res) => {
-  res.json({ admin: await auth.getSessionAdmin(req) });
+  res.json({ admin: withPerms(await auth.getSessionAdmin(req)) });
 });
 
 adminApi.post('/login', async (req, res) => {
@@ -245,7 +263,7 @@ adminApi.post('/login', async (req, res) => {
   }
   auth.clearLoginFailures(req.ip);
   res.set('Set-Cookie', auth.sessionCookie(await auth.createSession(admin.id), req, auth.SESSION_TTL_MS));
-  res.json({ admin: { id: admin.id, username: admin.username } });
+  res.json({ admin: withPerms({ id: admin.id, username: admin.username, role: admin.role || 'super_admin', created_at: admin.created_at }) });
 });
 
 adminApi.post('/logout', async (req, res) => {
@@ -265,26 +283,47 @@ adminApi.post('/password', async (req, res) => {
   await db.query('UPDATE admins SET password_hash = ? WHERE id = ?', [auth.hashPassword(newPassword), req.admin.id]);
   // Sign out every other session for this admin.
   await db.query('DELETE FROM sessions WHERE admin_id = ?', [req.admin.id]);
+  await audit.record(null, { ...audit.fromReq(req), action: 'admin.password_changed', entity: 'admin', entityId: req.admin.id, summary: 'Changed own password' });
   res.set('Set-Cookie', auth.sessionCookie(await auth.createSession(req.admin.id), req, auth.SESSION_TTL_MS));
   res.json({ ok: true });
 });
 
-adminApi.post('/admins', async (req, res) => {
+adminApi.post('/admins', need('admins.manage'), async (req, res) => {
+  const role = req.body?.role || 'membership_secretary';
+  if (!ROLES[role]) return res.status(400).json({ error: 'Choose a role.' });
   try {
-    await auth.createAdmin(req.body?.username, req.body?.password);
+    await auth.createAdmin(req.body?.username, req.body?.password, role);
   } catch (err) {
     return res.status(400).json({ error: err.message });
   }
+  await audit.record(null, { ...audit.fromReq(req), action: 'admin.created', entity: 'admin', entityId: String(req.body.username).toLowerCase(),
+    summary: `Added admin ${String(req.body.username).toLowerCase()} as ${ROLES[role].label}`, after: { username: String(req.body.username).toLowerCase(), role } });
   res.status(201).json({ ok: true });
 });
 
+// Changing another admin's role. The last super admin cannot be demoted.
+adminApi.patch('/admins/:id', need('admins.manage'), async (req, res) => {
+  const role = req.body?.role;
+  if (!ROLES[role]) return res.status(400).json({ error: 'Choose a role.' });
+  const target = await db.one('SELECT id, username, role FROM admins WHERE id = ?', [Number(req.params.id) || 0]);
+  if (!target) return res.status(404).json({ error: 'Admin not found.' });
+  if (target.role === 'super_admin' && role !== 'super_admin') {
+    const supers = Number((await db.one("SELECT COUNT(*) AS n FROM admins WHERE role = 'super_admin'")).n);
+    if (supers <= 1) return res.status(400).json({ error: 'There must always be at least one super admin.' });
+  }
+  await db.query('UPDATE admins SET role = ? WHERE id = ?', [role, target.id]);
+  await audit.record(null, { ...audit.fromReq(req), action: 'admin.role_changed', entity: 'admin', entityId: target.id,
+    summary: `${target.username}: ${ROLES[target.role]?.label} → ${ROLES[role].label}`, before: { role: target.role }, after: { role } });
+  res.json({ ok: true });
+});
+
 const ADMIN_SORTS = { username: 'username', created: 'created_at' };
-adminApi.get('/admins', async (req, res) => {
+adminApi.get('/admins', need('admins.manage'), async (req, res) => {
   const where = [];
   const params = [];
   if (req.query.q) { where.push('username LIKE ?'); params.push(likeParam(req.query.q)); }
   const { rows, ...page } = await paged(db, {
-    select: 'id, username, created_at', from: 'admins', where, params,
+    select: 'id, username, role, created_at', from: 'admins', where, params,
     p: pageParams(req.query, ADMIN_SORTS, 'username', 'asc'), tiebreak: 'id',
   });
   res.json({ admins: rows, ...page });
@@ -292,7 +331,7 @@ adminApi.get('/admins', async (req, res) => {
 
 // ---------------------------------------------------------------- admin: payment accounts
 
-adminApi.get('/settings', async (req, res) => {
+adminApi.get('/settings', need('dashboard'), async (req, res) => {
   res.json({ feeAccount: await settings.getSetting('feeAccount'), donationAccount: await settings.getSetting('donationAccount') });
 });
 
@@ -305,25 +344,28 @@ function saveAccount(key, validator) {
       if (err instanceof settings.ValidationError) return res.status(400).json({ error: err.message });
       throw err;
     }
+    const before = (await settings.getSetting(key)).value;
     await settings.saveSetting(key, value, req.admin.username);
+    await audit.record(null, { ...audit.fromReq(req), action: 'settings.payment_account', entity: 'settings', entityId: key,
+      summary: `${key === 'feeAccount' ? 'Membership fee' : 'Donations'} account changed`, ...audit.diff(before, value) });
     res.json(await settings.getSetting(key));
   };
 }
-adminApi.put('/settings/fee-account', saveAccount('feeAccount', settings.validateFeeAccount));
-adminApi.put('/settings/donation-account', saveAccount('donationAccount', settings.validateDonationAccount));
+adminApi.put('/settings/fee-account', need('finance.settings'), saveAccount('feeAccount', settings.validateFeeAccount));
+adminApi.put('/settings/donation-account', need('finance.settings'), saveAccount('donationAccount', settings.validateDonationAccount));
 
 // ---------------------------------------------------------------- admin: email app
 
-adminApi.get('/mail-status', (req, res) => {
+adminApi.get('/mail-status', need('dashboard'), (req, res) => {
   const c = mailer.config();
   res.json({ transport: c.transport, production: IN_PRODUCTION, from: c.from, replyTo: c.replyTo, ratePerMinute: c.ratePerMinute, dailyLimit: c.dailyLimit, problems: mailer.problems(), inbound: FEATURES.inboundEmail });
 });
 
-adminApi.get('/email-templates', (req, res) => res.json({ templates: templates.TEMPLATES }));
-adminApi.get('/email-labels', async (req, res) => res.json({ labels: await db.query('SELECT id, name, color FROM email_labels ORDER BY id') }));
+adminApi.get('/email-templates', need('email'), (req, res) => res.json({ templates: templates.TEMPLATES }));
+adminApi.get('/email-labels', need('email'), async (req, res) => res.json({ labels: await db.query('SELECT id, name, color FROM email_labels ORDER BY id') }));
 
 // Member search for the compose "To" field, with what each person can receive.
-adminApi.get('/members/lookup', async (req, res) => {
+adminApi.get('/members/lookup', need('email'), async (req, res) => {
   const q = String(req.query.q || '').trim();
   if (q.length < 2) return res.json({ members: [] });
   const like = likeParam(q);
@@ -332,7 +374,7 @@ adminApi.get('/members/lookup', async (req, res) => {
 });
 
 const EMAIL_SORTS = { date: 'e.created_at', subject: 'e.subject', from: 'e.from_email' };
-adminApi.get('/emails', async (req, res) => {
+adminApi.get('/emails', need('email'), async (req, res) => {
   const q = req.query;
   const folder = q.folder === 'starred' || email.FOLDERS.includes(q.folder) ? q.folder : 'inbox';
   const where = [];
@@ -366,7 +408,7 @@ adminApi.get('/emails', async (req, res) => {
   });
 });
 
-adminApi.get('/emails/:id', async (req, res) => {
+adminApi.get('/emails/:id', need('email'), async (req, res) => {
   const id = Number(req.params.id) || 0;
   const row = await db.one('SELECT * FROM emails WHERE id = ?', [id]);
   if (!row) return res.status(404).json({ error: 'Email not found.' });
@@ -381,7 +423,7 @@ adminApi.get('/emails/:id', async (req, res) => {
 });
 
 // Bulk actions on selected emails: read, unread, star, unstar, move, restore, label, unlabel, delete.
-adminApi.post('/emails/bulk', async (req, res) => {
+adminApi.post('/emails/bulk', need('email'), async (req, res) => {
   const { action, value } = req.body || {};
   const ids = [...new Set((req.body?.ids || []).map(Number).filter(Boolean))].slice(0, 500);
   if (!ids.length) return res.status(400).json({ error: 'Select at least one email.' });
@@ -415,7 +457,7 @@ adminApi.post('/emails/bulk', async (req, res) => {
 });
 
 // What the "To" summary shows before sending.
-adminApi.post('/emails/audience', async (req, res) => {
+adminApi.post('/emails/audience', need('email'), async (req, res) => {
   const a = await email.resolveAudience(req.body || {});
   res.json({
     category: a.category, recipients: a.recipients.filter((r) => r.kind === 'to').length, excluded: a.excluded, excludedTotal: a.excludedTotal,
@@ -423,7 +465,7 @@ adminApi.post('/emails/audience', async (req, res) => {
   });
 });
 
-adminApi.post('/emails', async (req, res) => {
+adminApi.post('/emails', need('email'), async (req, res) => {
   const b = req.body || {};
   const draftId = Number(b.draftId) || null;
   if (draftId && !(await db.one("SELECT id FROM emails WHERE id = ? AND folder = 'draft'", [draftId]))) return res.status(404).json({ error: 'Draft not found.' });
@@ -458,7 +500,7 @@ adminApi.post('/emails', async (req, res) => {
 });
 
 // Attachments are uploaded one at a time as raw bytes, before the email is sent.
-adminApi.post('/email-attachments', express.raw({ type: () => true, limit: email.MAX_ATTACHMENT }), async (req, res) => {
+adminApi.post('/email-attachments', need('email'), express.raw({ type: () => true, limit: email.MAX_ATTACHMENT }), async (req, res) => {
   let name = '';
   try { name = decodeURIComponent(String(req.get('x-filename') || '')); } catch { /* malformed name */ }
   name = name.replace(/[\\/\r\n"]/g, '_').trim().slice(0, 200);
@@ -468,11 +510,11 @@ adminApi.post('/email-attachments', express.raw({ type: () => true, limit: email
   const r = await db.query('INSERT INTO email_attachments (filename, content_type, size, data, uploaded_by) VALUES (?, ?, ?, ?, ?)', [name, type, req.body.length, req.body, req.admin.username]);
   res.status(201).json({ id: r.insertId, filename: name, size: req.body.length, contentType: type });
 });
-adminApi.delete('/email-attachments/:id', async (req, res) => {
+adminApi.delete('/email-attachments/:id', need('email'), async (req, res) => {
   await db.query('DELETE FROM email_attachments WHERE id = ? AND (email_id IS NULL OR email_id IN (SELECT id FROM emails WHERE folder = \'draft\'))', [Number(req.params.id) || 0]);
   res.json({ ok: true });
 });
-adminApi.get('/email-attachments/:id', async (req, res) => {
+adminApi.get('/email-attachments/:id', need('email'), async (req, res) => {
   const a = await db.one('SELECT filename, content_type, data FROM email_attachments WHERE id = ?', [Number(req.params.id) || 0]);
   if (!a) return res.status(404).json({ error: 'Attachment not found.' });
   // Always a download, never rendered in the admin's origin.
@@ -484,7 +526,7 @@ adminApi.get('/email-attachments/:id', async (req, res) => {
 
 const isoDay = (d) => d.toISOString().slice(0, 10);
 
-adminApi.get('/dashboard', async (req, res) => {
+adminApi.get('/dashboard', need('dashboard'), async (req, res) => {
   const n = async (sql, params = []) => Number((await db.one(sql, params)).n);
   // Registrations per day for the last 14 days (UTC), oldest first.
   const rows = await db.query(`SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS d, COUNT(*) AS n FROM members
@@ -502,11 +544,46 @@ adminApi.get('/dashboard', async (req, res) => {
       .map((r) => ({ chapter: r.chapter, n: Number(r.n) })),
     recentRegistrations: await db.query(`SELECT id, reference, full_name, email, chapter, status, payment_status, created_at
       FROM members ORDER BY created_at DESC, id DESC LIMIT 6`),
+    money: await dashboardMoney(),
   });
 });
 
+// Income for the dashboard: verified and reconciled money in, in GBP as recorded.
+async function dashboardMoney() {
+  const INCOME = "x.status IN ('verified', 'reconciled') AND x.type NOT IN ('refund', 'expense')";
+  const sumBy = async (sql, params = []) => Object.fromEntries((await db.query(sql, params)).map((r) => [r.k, Number(r.gbp)]));
+  const today = isoDay(new Date());
+  const byDay = await sumBy(`SELECT DATE_FORMAT(x.date_received, '%Y-%m-%d') AS k, SUM(x.amount_gbp) AS gbp FROM transactions x
+    WHERE ${INCOME} AND x.date_received >= DATE_FORMAT(UTC_DATE() - INTERVAL 1 MONTH, '%Y-%m-01') GROUP BY k`);
+  const days = (n) => Array.from({ length: n }, (_, i) => isoDay(new Date(Date.now() - (n - 1 - i) * 86400000)));
+  const last14 = days(14).map((d) => ({ date: d, gbp: byDay[d] || 0 }));
+  const monthStart = `${today.slice(0, 8)}01`;
+  const monthDays = days(Number(today.slice(8, 10))).map((d) => ({ date: d, gbp: byDay[d] || 0 }));
+  const prevMonth = new Date(`${monthStart}T00:00:00Z`); prevMonth.setUTCMonth(prevMonth.getUTCMonth() - 1);
+  const prevKey = prevMonth.toISOString().slice(0, 7);
+  const prevMonthToDate = Object.entries(byDay).filter(([d]) => d.startsWith(prevKey) && Number(d.slice(8)) <= Number(today.slice(8, 10))).reduce((s, [, v]) => s + v, 0);
+  const months = Array.from({ length: 12 }, (_, i) => { const d = new Date(`${monthStart}T00:00:00Z`); d.setUTCMonth(d.getUTCMonth() - (11 - i)); return d.toISOString().slice(0, 7); });
+  const byTypeMonth = await db.query(`SELECT x.type, DATE_FORMAT(x.date_received, '%Y-%m') AS k, SUM(x.amount_gbp) AS gbp FROM transactions x
+    WHERE ${INCOME} AND x.date_received >= ? GROUP BY x.type, k`, [`${months[0]}-01`]);
+  const earnings = {};
+  for (const type of ['membership_fee', 'stakeholder_membership', 'visit_contribution', 'donation']) {
+    earnings[type] = months.map((mo) => ({ month: mo, gbp: Number(byTypeMonth.find((r) => r.type === type && r.k === mo)?.gbp || 0) }));
+  }
+  const sum = (arr) => arr.reduce((s, x) => s + x.gbp, 0);
+  return {
+    week: last14.slice(7), weekTotal: sum(last14.slice(7)), lastWeekTotal: sum(last14.slice(0, 7)),
+    month: monthDays, monthTotal: sum(monthDays), prevMonthToDate,
+    earnings, months,
+    tiers: (await db.query(`SELECT t.name, COUNT(m.id) AS n FROM membership_tiers t
+      LEFT JOIN members m ON m.tier_id = t.id AND m.status <> 'rejected' GROUP BY t.id ORDER BY t.sort`)).map((r) => ({ name: r.name, n: Number(r.n) })),
+    recent: await db.query(`SELECT id, receipt_no, type, amount, currency, amount_gbp, payer_name, status, date_received, self_verified
+      FROM transactions ORDER BY recorded_at DESC, id DESC LIMIT 6`),
+    toVerify: Number((await db.one("SELECT COUNT(*) AS n FROM transactions WHERE status = 'pending'")).n),
+  };
+}
+
 // Top-bar search across members, donations and admins (5 of each).
-adminApi.get('/search', async (req, res) => {
+adminApi.get('/search', need('dashboard'), async (req, res) => {
   const q = String(req.query.q || '').trim();
   if (q.length < 2) return res.json({ members: [], donations: [], admins: [] });
   const like = likeParam(q);
@@ -521,11 +598,12 @@ adminApi.get('/search', async (req, res) => {
 });
 
 // The bell: things waiting on an admin.
-adminApi.get('/notifications', async (req, res) => {
+adminApi.get('/notifications', need('dashboard'), async (req, res) => {
   const n = async (sql) => Number((await db.one(sql)).n);
   res.json({
     pending: await n("SELECT COUNT(*) AS n FROM members WHERE status = 'pending'"),
-    paymentsToCheck: await n("SELECT COUNT(*) AS n FROM members WHERE payment_status = 'payment_reported'"),
+    paymentsToCheck: await n("SELECT COUNT(*) AS n FROM transactions WHERE status = 'pending'"),
+    feeReviews: await n('SELECT COUNT(*) AS n FROM members WHERE fee_review = 1'),
     donationsPledged: await n("SELECT COUNT(*) AS n FROM donations WHERE status = 'pledged'"),
     unreadMessages: await n("SELECT COUNT(*) AS n FROM emails WHERE folder = 'inbox' AND is_read = 0 AND source = 'contact'"),
     failedEmails: await n("SELECT COUNT(*) AS n FROM emails WHERE folder = 'sent' AND status IN ('failed', 'partial')"),
@@ -543,7 +621,9 @@ const MEMBER_COLUMNS = `
   m.id, m.reference, m.full_name, m.phone, m.email, m.date_of_birth, m.id_document_type,
   m.id_document_number, m.language, m.occupation, m.interest, m.interest_other, m.chapter, m.chapter_other, m.address_line1,
   m.address_line2, m.town, m.county, m.postcode, m.fee_amount, m.fee_currency, m.payment_status, m.payment_note, m.status,
-  m.admin_notes, m.created_at, m.updated_at,
+  m.admin_notes, m.created_at, m.updated_at, m.tier_id, m.fee_review, m.fee_review_reason, m.membership_start,
+  m.marketing_consent_at, m.email_opt_out,
+  (SELECT name FROM membership_tiers WHERE id = m.tier_id) AS tier_name,
   (SELECT COUNT(*) FROM members d WHERE d.id <> m.id AND (d.id_document_number = m.id_document_number OR d.email = m.email)) AS possible_duplicates`;
 
 // Sortable columns for ?sort= (keys are what the admin table sends).
@@ -558,6 +638,8 @@ function memberFilters(q) {
   if (MEMBER_STATUSES.includes(q.status)) { where.push('m.status = ?'); params.push(q.status); }
   if (PAYMENT_STATUSES.includes(q.payment)) { where.push('m.payment_status = ?'); params.push(q.payment); }
   if (q.chapter) { where.push('m.chapter = ?'); params.push(String(q.chapter)); }
+  if (Number(q.tier)) { where.push('m.tier_id = ?'); params.push(Number(q.tier)); }
+  if (q.review === '1') where.push('m.fee_review = 1');
   if (q.q) {
     const like = likeParam(q.q);
     where.push('(m.full_name LIKE ? OR m.email LIKE ? OR m.reference LIKE ? OR m.phone LIKE ? OR m.id_document_number LIKE ? OR m.postcode LIKE ?)');
@@ -576,20 +658,20 @@ async function memberQuery(q) {
 
 const getMember = (id) => db.one(`SELECT ${MEMBER_COLUMNS} FROM members m WHERE m.id = ?`, [Number(id) || 0]);
 
-adminApi.get('/stats', async (req, res) => {
+adminApi.get('/stats', need('dashboard'), async (req, res) => {
   const n = async (sql) => Number((await db.one(sql)).n);
   res.json({
     members: await n('SELECT COUNT(*) AS n FROM members'),
     membersPending: await n("SELECT COUNT(*) AS n FROM members WHERE status = 'pending'"),
     membersApproved: await n("SELECT COUNT(*) AS n FROM members WHERE status = 'approved'"),
-    paymentsToCheck: await n("SELECT COUNT(*) AS n FROM members WHERE payment_status = 'payment_reported'"),
+    paymentsToCheck: await n("SELECT COUNT(*) AS n FROM transactions WHERE status = 'pending'"),
     donationsPledged: await n("SELECT COUNT(*) AS n FROM donations WHERE status = 'pledged'"),
     donationsReceivedGbp: await n("SELECT COALESCE(SUM(amount_gbp), 0) AS n FROM donations WHERE status = 'received'"),
     emailsUnread: await n("SELECT COUNT(*) AS n FROM emails WHERE folder = 'inbox' AND is_read = 0"),
   });
 });
 
-adminApi.get('/members', async (req, res) => {
+adminApi.get('/members', need('members.read'), async (req, res) => {
   const { where, params } = memberFilters(req.query);
   const { rows, ...page } = await paged(db, {
     select: MEMBER_COLUMNS, from: 'members m', where, params,
@@ -598,7 +680,7 @@ adminApi.get('/members', async (req, res) => {
   res.json({ members: rows, ...page });
 });
 
-adminApi.get('/members.csv', async (req, res) => {
+adminApi.get('/members.csv', need('members.read'), async (req, res) => {
   sendCsv(res, `dcp-uk-members-${new Date().toISOString().slice(0, 10)}.csv`, [
     ['reference', 'Reference'], ['created_at', 'Registered (UTC)'], ['status', 'Status'], ['payment_status', 'Payment'],
     ['full_name', 'Full name'], ['email', 'Email'], ['phone', 'Phone'], ['date_of_birth', 'Date of birth'],
@@ -606,11 +688,12 @@ adminApi.get('/members.csv', async (req, res) => {
     ['occupation', 'Occupation'], ['interest', 'Interest'], ['interest_other', 'Interest (other)'],
     ['chapter', 'Chapter'], ['chapter_other', 'Nearest town/city'],
     ['address_line1', 'Address 1'], ['address_line2', 'Address 2'], ['town', 'Town'], ['county', 'County'], ['postcode', 'Postcode'],
-    ['fee_amount', 'Fee'], ['fee_currency', 'Fee currency'], ['payment_note', 'Payment code given'], ['admin_notes', 'Admin notes'],
+    ['tier_name', 'Tier'], ['fee_amount', 'Registration fee quoted'], ['fee_currency', 'Fee currency'], ['fee_review', 'Fee needs review'],
+    ['payment_note', 'Payment code given'], ['admin_notes', 'Admin notes'],
   ], await memberQuery(req.query));
 });
 
-adminApi.get('/members/:id', async (req, res) => {
+adminApi.get('/members/:id', need('members.read'), async (req, res) => {
   const member = await getMember(req.params.id);
   if (!member) return res.status(404).json({ error: 'Member not found.' });
   res.json({ member });
@@ -624,37 +707,68 @@ function reasonNote(verb, admin, reason) {
 }
 const cleanReason = (r) => String(r || '').trim().slice(0, 500);
 
-adminApi.patch('/members/:id', async (req, res) => {
+adminApi.patch('/members/:id', need('members.write'), async (req, res) => {
   const b = req.body || {};
   const updates = [];
   const params = [];
-  const current = await db.one('SELECT status, admin_notes FROM members WHERE id = ?', [Number(req.params.id) || 0]);
+  const id = Number(req.params.id) || 0;
+  const current = await db.one('SELECT reference, status, admin_notes, payment_status, tier_id, fee_review FROM members WHERE id = ?', [id]);
   if (!current) return res.status(404).json({ error: 'Member not found.' });
   let notes = b.adminNotes !== undefined ? String(b.adminNotes).slice(0, 2000) : undefined;
+  let reason = null;
   if (b.status !== undefined) {
     if (!MEMBER_STATUSES.includes(b.status)) return res.status(400).json({ error: 'Unknown status.' });
     if (b.status === 'rejected' && current.status !== 'rejected') {
-      const reason = cleanReason(b.reason);
+      reason = cleanReason(b.reason);
       if (!reason) return res.status(400).json({ error: 'Give a reason for rejecting this application.' });
       notes = [notes ?? current.admin_notes, reasonNote('Rejected', req.admin.username, reason)].filter(Boolean).join('\n');
     }
     updates.push('status = ?'); params.push(b.status);
   }
-  if (b.paymentStatus !== undefined) {
+  if (b.paymentStatus !== undefined && b.paymentStatus !== current.payment_status) {
+    // "Paid (confirmed)" is never set by hand: it comes from verified transactions.
+    if (b.paymentStatus === 'paid') return res.status(400).json({ error: 'Paid (confirmed) is set automatically when a payment is verified. Use Record payment.' });
+    if (current.payment_status === 'paid') return res.status(400).json({ error: 'This member is paid according to verified transactions. Void the transaction to change it.' });
     if (!PAYMENT_STATUSES.includes(b.paymentStatus)) return res.status(400).json({ error: 'Unknown payment status.' });
     updates.push('payment_status = ?'); params.push(b.paymentStatus);
   }
+  let tierChanged = false;
+  if (b.tierId !== undefined && Number(b.tierId) !== current.tier_id) {
+    const tier = await db.one('SELECT id, active FROM membership_tiers WHERE id = ?', [Number(b.tierId) || 0]);
+    if (!tier || !tier.active) return res.status(400).json({ error: 'Choose an active membership tier.' });
+    updates.push('tier_id = ?'); params.push(tier.id);
+    tierChanged = true;
+  }
+  if (b.feeReviewResolved === true && current.fee_review) {
+    if (!can(req.admin, 'finance.write')) return res.status(403).json({ error: 'Only the treasurer can clear a fee review.' });
+    updates.push('fee_review = 0');
+    notes = [notes ?? current.admin_notes, reasonNote('Fee review cleared', req.admin.username, cleanReason(b.feeReviewNote) || 'checked')].filter(Boolean).join('\n');
+  }
   if (notes !== undefined) { updates.push('admin_notes = ?'); params.push(notes.slice(-4000) || null); }
-  if (!updates.length) return res.status(400).json({ error: 'Nothing to update.' });
-  const result = await db.query(`UPDATE members SET ${updates.join(', ')}, updated_at = UTC_TIMESTAMP() WHERE id = ?`, [...params, Number(req.params.id) || 0]);
-  if (!result.affectedRows) return res.status(404).json({ error: 'Member not found.' });
-  res.json({ member: await getMember(req.params.id) });
+  if (!updates.length) return res.json({ member: await getMember(id) });
+  const before = await db.one('SELECT status, payment_status, tier_id, fee_review, admin_notes FROM members WHERE id = ?', [id]);
+  await db.transaction(async (q) => {
+    await q.query(`UPDATE members SET ${updates.join(', ')}, updated_at = UTC_TIMESTAMP() WHERE id = ?`, [...params, id]);
+    const after = await q.one('SELECT status, payment_status, tier_id, fee_review, admin_notes FROM members WHERE id = ?', [id]);
+    const d = audit.diff(before, after);
+    const changed = Object.keys(d.after);
+    await audit.record(q, { ...audit.fromReq(req), action: reason ? 'member.rejected' : 'member.updated', entity: 'member', entityId: id,
+      summary: reason ? `Rejected ${current.reference}: ${reason}` : `${current.reference}: ${changed.map((k) => (k === 'admin_notes' ? 'notes' : k)).join(', ')}`, ...d });
+    if (tierChanged) await finance.syncMember(q, id, audit.fromReq(req));
+  });
+  res.json({ member: await getMember(id) });
 });
 
 // Permanent deletion, e.g. for a data-erasure request.
-adminApi.delete('/members/:id', async (req, res) => {
-  const result = await db.query('DELETE FROM members WHERE id = ?', [Number(req.params.id) || 0]);
-  if (!result.affectedRows) return res.status(404).json({ error: 'Member not found.' });
+// Payments already on the ledger stay (financial records), under the payer name they were recorded with.
+adminApi.delete('/members/:id', need('members.write'), async (req, res) => {
+  const id = Number(req.params.id) || 0;
+  const m = await db.one('SELECT reference FROM members WHERE id = ?', [id]);
+  if (!m) return res.status(404).json({ error: 'Member not found.' });
+  await db.transaction(async (q) => {
+    await q.query('DELETE FROM members WHERE id = ?', [id]);
+    await audit.record(q, { ...audit.fromReq(req), action: 'member.deleted', entity: 'member', entityId: id, summary: `Deleted member ${m.reference} permanently` });
+  });
   res.json({ ok: true });
 });
 
@@ -668,6 +782,8 @@ function donationFilters(q) {
   const where = [];
   const params = [];
   if (DONATION_STATUSES.includes(q.status)) { where.push('status = ?'); params.push(q.status); }
+  if (q.kenyan === 'flagged') where.push("donor_kenyan <> 'yes'");
+  if (['yes', 'no', 'unknown'].includes(q.kenyan)) { where.push('donor_kenyan = ?'); params.push(q.kenyan); }
   if (q.q) {
     const like = likeParam(q.q);
     where.push('(full_name LIKE ? OR email LIKE ? OR reference LIKE ?)');
@@ -684,53 +800,84 @@ async function donationQuery(q) {
   return db.query(`SELECT * FROM donations ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY ${p.orderBy}, id DESC`, params);
 }
 
-adminApi.get('/donations', async (req, res) => {
+adminApi.get('/donations', need('donations.read'), async (req, res) => {
   const { where, params } = donationFilters(req.query);
   const { rows, ...page } = await paged(db, {
-    select: '*', from: 'donations', where, params,
+    select: `*, (SELECT COALESCE(SUM(x.amount_gbp), 0) FROM transactions x WHERE x.donation_id = donations.id AND x.status IN ('verified', 'reconciled')) AS received_gbp`,
+    from: 'donations', where, params,
     p: pageParams(req.query, DONATION_SORTS, 'pledged'), tiebreak: 'id DESC',
   });
   res.json({ donations: rows, ...page });
 });
 
-adminApi.get('/donations.csv', async (req, res) => {
+adminApi.get('/donations.csv', need('donations.read'), async (req, res) => {
   sendCsv(res, `dcp-uk-donations-${new Date().toISOString().slice(0, 10)}.csv`, [
     ['reference', 'Reference'], ['created_at', 'Pledged (UTC)'], ['status', 'Status'], ['amount_gbp', 'Amount (GBP)'],
-    ['frequency', 'Frequency'], ['full_name', 'Name'], ['email', 'Email'], ['message', 'Message'], ['admin_notes', 'Admin notes'],
+    ['frequency', 'Frequency'], ['full_name', 'Name'], ['email', 'Email'], ['donor_kenyan', 'Kenyan citizen (declared)'], ['message', 'Message'], ['admin_notes', 'Admin notes'],
   ], await donationQuery(req.query));
 });
 
-adminApi.get('/donations/:id', async (req, res) => {
+adminApi.get('/donations/:id', need('donations.read'), async (req, res) => {
   const donation = await db.one('SELECT * FROM donations WHERE id = ?', [Number(req.params.id) || 0]);
   if (!donation) return res.status(404).json({ error: 'Donation not found.' });
-  res.json({ donation });
+  const transactions = await db.query(`SELECT id, receipt_no, amount, currency, amount_gbp, status, date_received FROM transactions
+    WHERE donation_id = ? ORDER BY date_received DESC, id DESC`, [donation.id]);
+  res.json({ donation, transactions });
 });
 
-adminApi.patch('/donations/:id', async (req, res) => {
+adminApi.patch('/donations/:id', need('donations.write'), async (req, res) => {
   const b = req.body || {};
   const updates = [];
   const params = [];
-  const current = await db.one('SELECT status, admin_notes FROM donations WHERE id = ?', [Number(req.params.id) || 0]);
+  const id = Number(req.params.id) || 0;
+  const current = await db.one('SELECT reference, status, admin_notes, donor_kenyan FROM donations WHERE id = ?', [id]);
   if (!current) return res.status(404).json({ error: 'Donation not found.' });
   let notes = b.adminNotes !== undefined ? String(b.adminNotes).slice(0, 2000) : undefined;
-  if (b.status !== undefined) {
+  let reason = null;
+  if (b.status !== undefined && b.status !== current.status) {
     if (!DONATION_STATUSES.includes(b.status)) return res.status(400).json({ error: 'Unknown status.' });
+    if (b.status === 'received') return res.status(400).json({ error: 'A pledge becomes Received when a verified payment is linked to it. Use Record payment.' });
+    const linked = Number((await db.one("SELECT COUNT(*) AS n FROM transactions WHERE donation_id = ? AND status IN ('verified', 'reconciled')", [id])).n);
+    if (linked) return res.status(400).json({ error: 'This pledge has a verified payment linked. Void that payment first.' });
     if (b.status === 'cancelled' && current.status !== 'cancelled') {
-      const reason = cleanReason(b.reason);
+      reason = cleanReason(b.reason);
       if (!reason) return res.status(400).json({ error: 'Give a reason for cancelling this pledge.' });
       notes = [notes ?? current.admin_notes, reasonNote('Cancelled', req.admin.username, reason)].filter(Boolean).join('\n');
     }
     updates.push('status = ?'); params.push(b.status);
   }
+  if (b.donorKenyan !== undefined && b.donorKenyan !== current.donor_kenyan) {
+    if (!finance.DONOR_KENYAN.includes(b.donorKenyan)) return res.status(400).json({ error: 'Kenyan citizen must be yes, no or unknown.' });
+    updates.push('donor_kenyan = ?'); params.push(b.donorKenyan);
+  }
   if (notes !== undefined) { updates.push('admin_notes = ?'); params.push(notes.slice(-4000) || null); }
-  if (!updates.length) return res.status(400).json({ error: 'Nothing to update.' });
-  const result = await db.query(`UPDATE donations SET ${updates.join(', ')}, updated_at = UTC_TIMESTAMP() WHERE id = ?`, [...params, Number(req.params.id) || 0]);
-  if (!result.affectedRows) return res.status(404).json({ error: 'Donation not found.' });
-  res.json({ donation: await db.one('SELECT * FROM donations WHERE id = ?', [Number(req.params.id) || 0]) });
+  if (!updates.length) return res.json({ donation: await db.one('SELECT * FROM donations WHERE id = ?', [id]) });
+  const before = await db.one('SELECT status, donor_kenyan, admin_notes FROM donations WHERE id = ?', [id]);
+  await db.transaction(async (q) => {
+    await q.query(`UPDATE donations SET ${updates.join(', ')}, updated_at = UTC_TIMESTAMP() WHERE id = ?`, [...params, id]);
+    const after = await q.one('SELECT status, donor_kenyan, admin_notes FROM donations WHERE id = ?', [id]);
+    const d = audit.diff(before, after);
+    await audit.record(q, { ...audit.fromReq(req), action: reason ? 'donation.cancelled' : 'donation.updated', entity: 'donation', entityId: id,
+      summary: reason ? `Cancelled ${current.reference}: ${reason}` : `${current.reference}: ${Object.keys(d.after).map((k) => (k === 'admin_notes' ? 'notes' : k)).join(', ')}`, ...d });
+  });
+  res.json({ donation: await db.one('SELECT * FROM donations WHERE id = ?', [id]) });
 });
 
+adminApi.use(financeRoutes);
 app.use('/api/admin', adminApi);
 app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));
+
+// ---------------------------------------------------------------- receipts (payer's signed link)
+
+app.get('/receipts/:no', async (req, res) => {
+  res.set({ 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' });
+  const no = String(req.params.no);
+  if (!mailer.checkSign('receipt', no, req.query.t)) return res.status(404).send(unsubscribePage('Receipt not found', 'This receipt link is incomplete. Ask the chapter to send it again.'));
+  const tx = await db.one('SELECT * FROM transactions WHERE receipt_no = ?', [no]);
+  if (!tx) return res.status(404).send(unsubscribePage('Receipt not found', 'This receipt could not be found. Ask the chapter to send it again.'));
+  const member = tx.member_id ? await db.one('SELECT reference FROM members WHERE id = ?', [tx.member_id]) : null;
+  res.send(finance.renderReceiptPage(tx, member));
+});
 
 // ---------------------------------------------------------------- unsubscribe
 

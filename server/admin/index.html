@@ -142,18 +142,19 @@
     <nav class="tabs adm-nav" aria-label="Admin sections">
       <button type="button" data-tab="overview" class="selected" title="Dashboard"><svg class="ic"><use href="#i-dashboard"/></svg><span class="adm-nav-label">Dashboard</span></button>
       <p class="adm-nav-heading"><span class="adm-nav-label">Apps</span></p>
-      <button type="button" data-tab="email" title="Email"><svg class="ic"><use href="#i-mail"/></svg><span class="adm-nav-label">Email</span><span class="adm-nav-badge" id="nav-badge-email" hidden></span></button>
+      <button type="button" data-tab="email" data-perm="email" title="Email"><svg class="ic"><use href="#i-mail"/></svg><span class="adm-nav-label">Email</span><span class="adm-nav-badge" id="nav-badge-email" hidden></span></button>
       <p class="adm-nav-heading"><span class="adm-nav-label">Membership</span></p>
-      <button type="button" data-tab="members" title="Members"><svg class="ic"><use href="#i-users"/></svg><span class="adm-nav-label">Members</span><span class="adm-nav-badge" id="nav-badge-members" hidden></span></button>
+      <button type="button" data-tab="members" data-perm="members.read" title="Members"><svg class="ic"><use href="#i-users"/></svg><span class="adm-nav-label">Members</span><span class="adm-nav-badge" id="nav-badge-members" hidden></span></button>
       <button type="button" class="adm-soon" data-soon="the member import" title="Import members: coming with the member import" aria-disabled="true"><svg class="ic"><use href="#i-upload"/></svg><span class="adm-nav-label">Import members</span><span class="adm-soon-tag" aria-hidden="true">Soon</span><span class="adm-sr">(coming soon)</span></button>
       <button type="button" class="adm-soon" data-soon="member logins" title="Activations: coming with member logins" aria-disabled="true"><svg class="ic"><use href="#i-user-check"/></svg><span class="adm-nav-label">Activations</span><span class="adm-soon-tag" aria-hidden="true">Soon</span><span class="adm-sr">(coming soon)</span></button>
       <p class="adm-nav-heading"><span class="adm-nav-label">Finance</span></p>
-      <button type="button" class="adm-soon" data-soon="the Finance module" title="Transactions: coming with the Finance module" aria-disabled="true"><svg class="ic"><use href="#i-receipt"/></svg><span class="adm-nav-label">Transactions</span><span class="adm-soon-tag" aria-hidden="true">Soon</span><span class="adm-sr">(coming soon)</span></button>
-      <button type="button" data-tab="donations" title="Donations"><svg class="ic"><use href="#i-heart"/></svg><span class="adm-nav-label">Donations</span><span class="adm-nav-badge" id="nav-badge-donations" hidden></span></button>
-      <button type="button" data-tab="accounts" title="Payment accounts"><svg class="ic"><use href="#i-bank"/></svg><span class="adm-nav-label">Payment accounts</span></button>
-      <button type="button" class="adm-soon" data-soon="the Finance module" title="Reports: coming with the Finance module" aria-disabled="true"><svg class="ic"><use href="#i-report"/></svg><span class="adm-nav-label">Reports</span><span class="adm-soon-tag" aria-hidden="true">Soon</span><span class="adm-sr">(coming soon)</span></button>
+      <button type="button" data-tab="transactions" data-perm="finance.read" title="Transactions"><svg class="ic"><use href="#i-receipt"/></svg><span class="adm-nav-label">Transactions</span><span class="adm-nav-badge" id="nav-badge-transactions" hidden></span></button>
+      <button type="button" data-tab="donations" data-perm="donations.read" title="Donations"><svg class="ic"><use href="#i-heart"/></svg><span class="adm-nav-label">Donations</span><span class="adm-nav-badge" id="nav-badge-donations" hidden></span></button>
+      <button type="button" data-tab="accounts" data-perm="finance.read" title="Payment accounts"><svg class="ic"><use href="#i-bank"/></svg><span class="adm-nav-label">Payment accounts</span></button>
+      <button type="button" data-tab="reports" data-perm="finance.read" title="Reports"><svg class="ic"><use href="#i-report"/></svg><span class="adm-nav-label">Reports</span></button>
       <p class="adm-nav-heading"><span class="adm-nav-label">Settings</span></p>
       <button type="button" data-tab="users" title="Admin users"><svg class="ic"><use href="#i-shield"/></svg><span class="adm-nav-label">Admin users</span></button>
+      <button type="button" data-tab="audit" data-perm="audit.read" title="Audit log"><svg class="ic"><use href="#i-file"/></svg><span class="adm-nav-label">Audit log</span></button>
     </nav>
     <span class="adm-flag-stripe" aria-hidden="true"></span>
   </aside>
@@ -196,7 +197,7 @@
           <div class="adm-user-menu" id="adm-user-menu" hidden>
             <div class="adm-user-menu-head">
               <span class="adm-avatar" id="adm-avatar-2" aria-hidden="true"></span>
-              <div><strong id="adm-who-2"></strong><span>Administrator</span></div>
+              <div><strong id="adm-who-2"></strong><span id="adm-role-2">Administrator</span></div>
             </div>
             <button type="button" id="adm-profile"><svg class="ic"><use href="#i-user"/></svg>Profile</button>
             <button type="button" id="adm-change-password"><svg class="ic"><use href="#i-key"/></svg>Change password</button>
@@ -220,10 +221,11 @@
             <p class="adm-mini-sub" id="dash-new-sub"></p>
             <div class="adm-mini-chart" id="chart-new" role="img" aria-label="Registrations per day this week"></div>
           </section>
-          <section class="adm-card adm-mini adm-span-mini adm-placeholder-card" aria-labelledby="dash-money-title">
+          <section class="adm-card adm-mini adm-span-mini" aria-labelledby="dash-money-title">
             <p class="adm-mini-label" id="dash-money-title">Money in</p>
-            <p class="adm-mini-n adm-muted-n">–</p>
-            <p class="adm-placeholder-note"><svg class="ic"><use href="#i-info"/></svg>Available after Finance is set up</p>
+            <p class="adm-mini-n" id="dash-money-n">–</p>
+            <p class="adm-mini-sub" id="dash-money-sub"></p>
+            <div class="adm-mini-chart" id="chart-money" role="img" aria-label="Income per day this month"></div>
           </section>
           <section class="adm-card adm-mini adm-span-mini adm-mini-link" role="button" tabindex="0" id="dash-pending" aria-labelledby="dash-pending-title">
             <span class="adm-tile adm-tone-warning" aria-hidden="true"><svg class="ic"><use href="#i-clock"/></svg></span>
@@ -235,23 +237,28 @@
             <span class="adm-tile adm-tone-bright" aria-hidden="true"><svg class="ic"><use href="#i-cash"/></svg></span>
             <p class="adm-mini-n" id="dash-verify-n">–</p>
             <p class="adm-mini-label" id="dash-verify-title">Payments to verify</p>
-            <p class="adm-mini-sub">Members who say they have paid</p>
+            <p class="adm-mini-sub" id="dash-verify-sub">Recorded, waiting for a second admin</p>
           </section>
-          <section class="adm-card adm-span-wide adm-placeholder-card" aria-labelledby="dash-growth-title">
-            <div class="adm-card-header"><div><h2 class="adm-card-title" id="dash-growth-title">Income growth</h2><p class="adm-muted">Weekly income, current day highlighted</p></div></div>
-            <div class="adm-placeholder"><span class="adm-tile adm-tone-primary"><svg class="ic"><use href="#i-trending-up"/></svg></span><strong>Available after Finance is set up</strong><span>Income totals come from verified transactions, which arrive with the Finance module.</span></div>
+          <section class="adm-card adm-span-wide adm-growth" aria-labelledby="dash-growth-title">
+            <div class="adm-growth-text">
+              <h2 class="adm-card-title" id="dash-growth-title">Income growth</h2>
+              <p class="adm-muted">Last 7 days, today highlighted</p>
+              <p class="adm-growth-n" id="dash-growth-n">–</p>
+              <p id="dash-growth-chip"></p>
+            </div>
+            <div class="adm-growth-chart" id="chart-growth" role="img" aria-label="Income per day over the last 7 days"></div>
           </section>
 
           <!-- Row 2: earnings report + members by chapter -->
-          <section class="adm-card adm-span-8 adm-placeholder-card" aria-labelledby="dash-earn-title">
-            <div class="adm-card-header"><div><h2 class="adm-card-title" id="dash-earn-title">Earnings report</h2><p class="adm-muted">Monthly income by type</p></div></div>
-            <div class="adm-earn-tabs" aria-hidden="true">
-              <span class="adm-earn-tab"><svg class="ic"><use href="#i-users"/></svg>Membership fees</span>
-              <span class="adm-earn-tab"><svg class="ic"><use href="#i-shield"/></svg>Stakeholder</span>
-              <span class="adm-earn-tab"><svg class="ic"><use href="#i-map-pin"/></svg>Visit contributions</span>
-              <span class="adm-earn-tab"><svg class="ic"><use href="#i-heart"/></svg>Donations</span>
+          <section class="adm-card adm-span-8" aria-labelledby="dash-earn-title">
+            <div class="adm-card-header"><div><h2 class="adm-card-title" id="dash-earn-title">Earnings report</h2><p class="adm-muted">Verified income by month, current month highlighted</p></div></div>
+            <div class="adm-earn-tabs" role="tablist" aria-label="Income type">
+              <button type="button" role="tab" class="adm-earn-tab" data-earn="membership_fee" aria-selected="true"><svg class="ic"><use href="#i-users"/></svg>Membership fees<strong data-earn-total></strong></button>
+              <button type="button" role="tab" class="adm-earn-tab" data-earn="stakeholder_membership" aria-selected="false"><svg class="ic"><use href="#i-shield"/></svg>Stakeholder<strong data-earn-total></strong></button>
+              <button type="button" role="tab" class="adm-earn-tab" data-earn="visit_contribution" aria-selected="false"><svg class="ic"><use href="#i-map-pin"/></svg>Visit contributions<strong data-earn-total></strong></button>
+              <button type="button" role="tab" class="adm-earn-tab" data-earn="donation" aria-selected="false"><svg class="ic"><use href="#i-heart"/></svg>Donations<strong data-earn-total></strong></button>
             </div>
-            <div class="adm-placeholder"><strong>Available after Finance is set up</strong><span>Each tab will chart verified income for that type, month by month.</span></div>
+            <div id="chart-earn" class="adm-chart adm-chart-sm" role="tabpanel" aria-label="Monthly income"></div>
           </section>
           <section class="adm-card adm-span-4" aria-labelledby="dash-chapter-title">
             <div class="adm-card-header"><div><h2 class="adm-card-title" id="dash-chapter-title">Members by chapter</h2><p class="adm-muted" id="dash-chapter-sub"></p></div></div>
@@ -259,18 +266,19 @@
           </section>
 
           <!-- Row 3 -->
-          <section class="adm-card adm-span-4 adm-placeholder-card" aria-labelledby="dash-tier-title">
-            <div class="adm-card-header"><div><h2 class="adm-card-title" id="dash-tier-title">Membership tiers</h2><p class="adm-muted">Ordinary, Stakeholder and Visit contribution</p></div></div>
-            <div class="adm-placeholder"><span class="adm-tile adm-tone-primary"><svg class="ic"><use href="#i-chart-pie"/></svg></span><strong>Available after Finance is set up</strong><span>Tiers are added with the Finance module.</span></div>
+          <section class="adm-card adm-span-4" aria-labelledby="dash-tier-title">
+            <div class="adm-card-header"><div><h2 class="adm-card-title" id="dash-tier-title">Membership tiers</h2><p class="adm-muted">Members by tier (not rejected)</p></div></div>
+            <div id="chart-tiers" class="adm-chart adm-chart-sm" role="img" aria-label="Members by tier"></div>
           </section>
           <section class="adm-card adm-span-4" aria-labelledby="dash-recent-title">
             <div class="adm-card-header"><div><h2 class="adm-card-title" id="dash-recent-title">Recent registrations</h2><p class="adm-muted">Newest first</p></div>
               <button type="button" class="adm-btn adm-btn-ghost adm-btn-sm" id="dash-recent-all">View all</button></div>
             <ul class="adm-list" id="dash-recent"></ul>
           </section>
-          <section class="adm-card adm-span-4 adm-placeholder-card" aria-labelledby="dash-tx-title">
-            <div class="adm-card-header"><div><h2 class="adm-card-title" id="dash-tx-title">Recent transactions</h2><p class="adm-muted">Payments recorded by the treasurer</p></div></div>
-            <div class="adm-placeholder"><span class="adm-tile adm-tone-primary"><svg class="ic"><use href="#i-receipt"/></svg></span><strong>Available after Finance is set up</strong><span>Recorded and verified payments will be listed here.</span></div>
+          <section class="adm-card adm-span-4" aria-labelledby="dash-tx-title">
+            <div class="adm-card-header"><div><h2 class="adm-card-title" id="dash-tx-title">Recent transactions</h2><p class="adm-muted">Latest recorded payments</p></div>
+              <button type="button" class="adm-btn adm-btn-ghost adm-btn-sm" id="dash-tx-all" data-perm="finance.read">View all</button></div>
+            <ul class="adm-list" id="dash-tx"></ul>
           </section>
 
           <!-- Row 4 -->
@@ -355,6 +363,8 @@
             <select id="m-status" aria-label="Filter by membership status"><option value="">All statuses</option><option value="pending">Pending review</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select>
             <select id="m-payment" aria-label="Filter by fee payment"><option value="">All payments</option><option value="pending_payment">Not paid</option><option value="payment_reported">Reported paid (check)</option><option value="paid">Paid (confirmed)</option></select>
             <select id="m-chapter" aria-label="Filter by chapter"><option value="">All chapters</option><option>London</option><option>Manchester</option><option>Birmingham</option><option>Leeds</option><option>Glasgow</option><option>Cardiff</option><option>Nottingham</option><option>Belfast</option><option>None nearby</option></select>
+            <select id="m-tier" aria-label="Filter by tier"><option value="">All tiers</option></select>
+            <select id="m-review" aria-label="Filter by fee review"><option value="">Any fee state</option><option value="1">Fee needs review</option></select>
             <div class="adm-daterange" role="group" aria-label="Date range">
               <label><span class="adm-sr">From date</span><input type="date" id="m-from" aria-label="From date"></label>
               <span aria-hidden="true">–</span>
@@ -379,12 +389,13 @@
       <div data-panel="donations" hidden>
         <section class="adm-card adm-table-card" aria-labelledby="donations-title">
           <div class="adm-card-header">
-            <div><h2 class="adm-card-title" id="donations-title">Donation pledges</h2><p class="adm-muted">Mark a pledge received once the transfer shows in the bank account.</p></div>
+            <div><h2 class="adm-card-title" id="donations-title">Donation pledges</h2><p class="adm-muted">A pledge becomes Received when its payment is recorded and verified.</p></div>
             <a class="adm-btn adm-btn-outline adm-btn-sm" id="d-export" href="/api/admin/donations.csv"><svg class="ic"><use href="#i-download"/></svg>Export CSV</a>
           </div>
           <div class="toolbar adm-toolbar">
             <label class="adm-search"><svg class="ic"><use href="#i-search"/></svg><span class="adm-sr">Search donations</span><input type="search" id="d-search" placeholder="Search name, email or reference"></label>
             <select id="d-status" aria-label="Filter by status"><option value="">All statuses</option><option value="pledged">Pledged (awaiting transfer)</option><option value="received">Received</option><option value="cancelled">Cancelled</option></select>
+            <select id="d-kenyan" aria-label="Filter by Kenyan-citizen declaration"><option value="">Any declaration</option><option value="flagged">Not declared "yes" (flagged)</option><option value="yes">Declared Kenyan</option><option value="no">Declared not Kenyan</option><option value="unknown">Unknown</option></select>
             <div class="adm-daterange" role="group" aria-label="Date range">
               <label><span class="adm-sr">From date</span><input type="date" id="d-from" aria-label="From date"></label>
               <span aria-hidden="true">–</span>
@@ -394,13 +405,166 @@
           <div class="adm-chips" id="d-chips" hidden></div>
           <div class="table-wrap adm-table-wrap">
             <table class="adm-table">
-              <thead><tr><th scope="col" data-sort="reference">Reference</th><th scope="col" data-sort="donor">Donor</th><th scope="col" data-sort="amount">Amount</th><th scope="col" data-sort="pledged" class="col-pledged">Pledged</th><th scope="col" class="col-msg">Message</th><th scope="col" data-sort="status">Status</th><th scope="col"><span class="adm-sr">Actions</span></th></tr></thead>
+              <thead><tr><th scope="col" data-sort="reference">Reference</th><th scope="col" data-sort="donor">Donor</th><th scope="col" data-sort="amount">Amount</th><th scope="col" data-sort="pledged" class="col-pledged">Pledged</th><th scope="col" class="col-msg">Message</th><th scope="col" class="col-kenyan">Kenyan</th><th scope="col" data-sort="status">Status</th><th scope="col"><span class="adm-sr">Actions</span></th></tr></thead>
               <tbody id="donations-body"></tbody>
             </table>
           </div>
           <div class="adm-table-foot">
             <div class="adm-foot-left"><label class="adm-size"><span>Rows per page</span><select id="d-size" aria-label="Rows per page"><option>10</option><option selected>25</option><option>50</option><option>100</option></select></label><p class="adm-muted" id="donations-count" aria-live="polite"></p></div>
             <nav class="adm-pager" id="donations-pager" aria-label="Pages"></nav>
+          </div>
+        </section>
+      </div>
+
+      <!-- ---------------------------------------------------------- Transactions -->
+      <div data-panel="transactions" hidden>
+        <div class="adm-alert adm-alert-warning" id="tx-four-eyes-off" role="status" hidden>
+          <svg class="ic"><use href="#i-alert"/></svg><p><strong>Four-eyes check is off.</strong> Admins can verify payments they recorded themselves; each one is flagged. Turn it back on under Payment accounts → Finance settings.</p>
+        </div>
+        <section class="adm-card adm-table-card" aria-labelledby="tx-title">
+          <div class="adm-card-header">
+            <div><h2 class="adm-card-title" id="tx-title">Transactions</h2><p class="adm-muted" id="tx-totals"></p></div>
+            <div class="adm-header-actions">
+              <a class="adm-btn adm-btn-outline adm-btn-sm" id="tx-export" href="/api/admin/transactions/export"><svg class="ic"><use href="#i-download"/></svg>CSV</a>
+              <a class="adm-btn adm-btn-outline adm-btn-sm" id="tx-export-xlsx" href="/api/admin/transactions/export?format=xlsx"><svg class="ic"><use href="#i-download"/></svg>Excel</a>
+              <button type="button" class="adm-btn adm-btn-primary adm-btn-sm" id="tx-record" data-perm="finance.write"><svg class="ic"><use href="#i-cash"/></svg>Record payment</button>
+            </div>
+          </div>
+          <div class="toolbar adm-toolbar">
+            <label class="adm-search"><svg class="ic"><use href="#i-search"/></svg><span class="adm-sr">Search transactions</span><input type="search" id="tx-search" placeholder="Payer, receipt number, reference, M-Pesa code"></label>
+            <select id="tx-type" aria-label="Filter by type"><option value="">All types</option><option value="membership_fee">Membership fee</option><option value="stakeholder_membership">Stakeholder membership</option><option value="visit_contribution">Visit contribution</option><option value="donation">Donation</option><option value="other_income">Other income</option><option value="refund">Refund</option><option value="expense">Expense</option></select>
+            <select id="tx-method" aria-label="Filter by method"><option value="">All methods</option><option value="mpesa_paybill">M-Pesa Paybill</option><option value="mpesa_till">M-Pesa Till</option><option value="bank_transfer">Bank transfer</option><option value="cash">Cash</option><option value="card_online">Card / online</option></select>
+            <select id="tx-status" aria-label="Filter by status"><option value="">All statuses</option><option value="pending">Pending verification</option><option value="verified">Verified</option><option value="reconciled">Reconciled</option><option value="rejected">Rejected</option><option value="void">Void</option></select>
+            <select id="tx-account" aria-label="Filter by account"><option value="">All accounts</option><option value="fee_account">Membership fee account</option><option value="donations_account">Donations bank account</option><option value="other">Other / cash</option></select>
+            <select id="tx-flag" aria-label="Filter by flag"><option value="">No flag filter</option><option value="self_verified">Self-verified (flagged)</option><option value="no_rate">Missing exchange rate</option><option value="not_kenyan">Donation without Kenyan "yes"</option></select>
+            <div class="adm-daterange" role="group" aria-label="Date range">
+              <label><span class="adm-sr">From date</span><input type="date" id="tx-from" aria-label="From date"></label>
+              <span aria-hidden="true">–</span>
+              <label><span class="adm-sr">To date</span><input type="date" id="tx-to" aria-label="To date"></label>
+            </div>
+            <div class="adm-amount-range" role="group" aria-label="Amount range in GBP">
+              <label><span class="adm-sr">Minimum £</span><input type="number" id="tx-min" min="0" step="0.01" placeholder="Min £" aria-label="Minimum amount in GBP"></label>
+              <span aria-hidden="true">–</span>
+              <label><span class="adm-sr">Maximum £</span><input type="number" id="tx-max" min="0" step="0.01" placeholder="Max £" aria-label="Maximum amount in GBP"></label>
+            </div>
+          </div>
+          <div class="adm-chips" id="tx-chips" hidden></div>
+          <div class="table-wrap adm-table-wrap">
+            <table class="adm-table">
+              <thead><tr><th scope="col" data-sort="date">Received</th><th scope="col" data-sort="payer">Payer</th><th scope="col" data-sort="type" class="col-contact">Type</th><th scope="col" data-sort="amount">Amount</th><th scope="col" class="col-reg">Method</th><th scope="col" data-sort="receipt" class="col-pledged">Receipt</th><th scope="col" data-sort="status">Status</th><th scope="col"><span class="adm-sr">Actions</span></th></tr></thead>
+              <tbody id="tx-body"></tbody>
+            </table>
+          </div>
+          <div class="adm-table-foot">
+            <div class="adm-foot-left"><label class="adm-size"><span>Rows per page</span><select id="tx-size" aria-label="Rows per page"><option>10</option><option selected>25</option><option>50</option><option>100</option></select></label><p class="adm-muted" id="tx-count" aria-live="polite"></p></div>
+            <nav class="adm-pager" id="tx-pager" aria-label="Pages"></nav>
+          </div>
+        </section>
+      </div>
+
+      <!-- ---------------------------------------------------------- Reports -->
+      <div data-panel="reports" hidden>
+        <div class="adm-card adm-report-bar">
+          <div class="adm-report-filters">
+            <label class="adm-field"><span>From</span><input type="date" id="rp-from"></label>
+            <label class="adm-field"><span>To</span><input type="date" id="rp-to"></label>
+            <label class="adm-field"><span>Type</span><select id="rp-type" aria-label="Type"><option value="">All types</option><option value="membership_fee">Membership fee</option><option value="stakeholder_membership">Stakeholder membership</option><option value="visit_contribution">Visit contribution</option><option value="donation">Donation</option><option value="other_income">Other income</option><option value="refund">Refund</option><option value="expense">Expense</option></select></label>
+            <label class="adm-field"><span>Method</span><select id="rp-method" aria-label="Method"><option value="">All methods</option><option value="mpesa_paybill">M-Pesa Paybill</option><option value="mpesa_till">M-Pesa Till</option><option value="bank_transfer">Bank transfer</option><option value="cash">Cash</option><option value="card_online">Card / online</option></select></label>
+            <label class="adm-field"><span>Chapter</span><select id="rp-chapter" aria-label="Chapter"><option value="">All chapters</option><option>London</option><option>Manchester</option><option>Birmingham</option><option>Leeds</option><option>Glasgow</option><option>Cardiff</option><option>Nottingham</option><option>Belfast</option><option>None nearby</option><option>Not linked to a member</option></select></label>
+          </div>
+          <div class="adm-report-presets" role="group" aria-label="Quick ranges">
+            <button type="button" class="adm-btn adm-btn-ghost adm-btn-sm" data-range="month">This month</button>
+            <button type="button" class="adm-btn adm-btn-ghost adm-btn-sm" data-range="quarter">This quarter</button>
+            <button type="button" class="adm-btn adm-btn-ghost adm-btn-sm" data-range="year">This year</button>
+            <button type="button" class="adm-btn adm-btn-ghost adm-btn-sm" data-range="last12">Last 12 months</button>
+          </div>
+        </div>
+        <div class="adm-stats-row" id="rp-kpis"></div>
+        <div class="adm-dash">
+          <section class="adm-card adm-span-8" aria-labelledby="rp-month-title">
+            <div class="adm-card-header"><div><h2 class="adm-card-title" id="rp-month-title">Income by month</h2><p class="adm-muted">Money in and money out (refunds and expenses), in GBP as recorded</p></div>
+              <div class="adm-header-actions"><a class="adm-btn adm-btn-outline adm-btn-sm" data-export="income" data-format="csv"><svg class="ic"><use href="#i-download"/></svg>CSV</a><a class="adm-btn adm-btn-outline adm-btn-sm" data-export="income" data-format="xlsx"><svg class="ic"><use href="#i-download"/></svg>Excel</a></div></div>
+            <div id="chart-rp-month" class="adm-chart" role="img" aria-label="Income by month"></div>
+          </section>
+          <section class="adm-card adm-span-4" aria-labelledby="rp-type-title">
+            <div class="adm-card-header"><div><h2 class="adm-card-title" id="rp-type-title">By type</h2></div></div>
+            <table class="adm-mini-table" id="rp-by-type"></table>
+          </section>
+          <section class="adm-card adm-span-4" aria-labelledby="rp-method-title">
+            <div class="adm-card-header"><div><h2 class="adm-card-title" id="rp-method-title">By method</h2></div></div>
+            <table class="adm-mini-table" id="rp-by-method"></table>
+          </section>
+          <section class="adm-card adm-span-4" aria-labelledby="rp-chapter-title">
+            <div class="adm-card-header"><div><h2 class="adm-card-title" id="rp-chapter-title">Totals per chapter</h2><p class="adm-muted">By the paying member's chapter</p></div></div>
+            <table class="adm-mini-table" id="rp-by-chapter"></table>
+          </section>
+          <section class="adm-card adm-span-4" aria-labelledby="rp-don-title">
+            <div class="adm-card-header"><div><h2 class="adm-card-title" id="rp-don-title">Donations summary</h2><p class="adm-muted">Pledges made in the period and verified donations by declaration</p></div></div>
+            <div id="rp-donations"></div>
+            <div class="adm-report-exports">
+              <a class="adm-btn adm-btn-outline adm-btn-sm" data-export="donations" data-format="csv"><svg class="ic"><use href="#i-download"/></svg>Pledges CSV</a>
+              <div class="adm-donor-export">
+                <label class="adm-field"><span>Donor report for party HQ</span><select id="rp-period" aria-label="Donor report period"><option value="month">Per month</option><option value="quarter">Per quarter</option><option value="year">Per year</option></select></label>
+                <a class="adm-btn adm-btn-primary adm-btn-sm" data-export="donors" data-format="xlsx"><svg class="ic"><use href="#i-download"/></svg>Excel</a>
+                <a class="adm-btn adm-btn-outline adm-btn-sm" data-export="donors" data-format="csv">CSV</a>
+              </div>
+            </div>
+          </section>
+          <section class="adm-card adm-table-card adm-span-12" aria-labelledby="out-title">
+            <div class="adm-card-header">
+              <div><h2 class="adm-card-title" id="out-title">Outstanding fees</h2><p class="adm-muted" id="out-total"></p></div>
+              <div class="adm-header-actions">
+                <a class="adm-btn adm-btn-outline adm-btn-sm" id="out-export" data-export="outstanding" data-format="csv"><svg class="ic"><use href="#i-download"/></svg>CSV</a>
+                <a class="adm-btn adm-btn-outline adm-btn-sm" data-export="outstanding" data-format="xlsx"><svg class="ic"><use href="#i-download"/></svg>Excel</a>
+                <button type="button" class="adm-btn adm-btn-primary adm-btn-sm" id="out-remind" data-perm="finance.write" disabled><svg class="ic"><use href="#i-mail"/></svg>Send reminders</button>
+              </div>
+            </div>
+            <div class="toolbar adm-toolbar">
+              <label class="adm-search"><svg class="ic"><use href="#i-search"/></svg><span class="adm-sr">Search</span><input type="search" id="out-search" placeholder="Name, email or reference"></label>
+              <select id="out-chapter" aria-label="Chapter"><option value="">All chapters</option><option>London</option><option>Manchester</option><option>Birmingham</option><option>Leeds</option><option>Glasgow</option><option>Cardiff</option><option>Nottingham</option><option>Belfast</option><option>None nearby</option></select>
+              <select id="out-tier" aria-label="Tier"><option value="">All tiers</option></select>
+              <select id="out-status" aria-label="Membership status"><option value="">Pending and approved</option><option value="approved">Approved</option><option value="pending">Pending review</option></select>
+            </div>
+            <div class="adm-chips" id="out-chips" hidden></div>
+            <div class="table-wrap adm-table-wrap">
+              <table class="adm-table">
+                <thead><tr><th scope="col"><input type="checkbox" class="adm-check" id="out-all" aria-label="Select all on this page"></th><th scope="col" data-sort="name">Member</th><th scope="col" data-sort="chapter" class="col-contact">Chapter</th><th scope="col">Tier</th><th scope="col" data-sort="balance">Balance due</th><th scope="col" class="col-reg">Last payment</th><th scope="col"><span class="adm-sr">Actions</span></th></tr></thead>
+                <tbody id="out-body"></tbody>
+              </table>
+            </div>
+            <div class="adm-table-foot">
+            <div class="adm-foot-left"><label class="adm-size"><span>Rows per page</span><select id="out-size" aria-label="Rows per page"><option>10</option><option selected>25</option><option>50</option><option>100</option></select></label><p class="adm-muted" id="out-count" aria-live="polite"></p></div>
+            <nav class="adm-pager" id="out-pager" aria-label="Pages"></nav>
+          </div>
+          </section>
+        </div>
+      </div>
+
+      <!-- ---------------------------------------------------------- Audit log -->
+      <div data-panel="audit" hidden>
+        <section class="adm-card adm-table-card" aria-labelledby="audit-title">
+          <div class="adm-card-header"><div><h2 class="adm-card-title" id="audit-title">Audit log</h2><p class="adm-muted">Every change to money, members, pledges, settings and admins. Entries can never be edited or deleted.</p></div></div>
+          <div class="toolbar adm-toolbar">
+            <label class="adm-search"><svg class="ic"><use href="#i-search"/></svg><span class="adm-sr">Search the log</span><input type="search" id="au-search" placeholder="What happened, reference or ID"></label>
+            <select id="au-entity" aria-label="Filter by record type"><option value="">All records</option><option value="transaction">Transactions</option><option value="member">Members</option><option value="donation">Donations</option><option value="settings">Settings</option><option value="tier">Tiers</option><option value="admin">Admins</option><option value="report">Reports</option></select>
+            <select id="au-flagged" aria-label="Filter by flag"><option value="">All entries</option><option value="1">Flagged only</option></select>
+            <input type="search" id="au-actor" placeholder="Who (email)" aria-label="Filter by who">
+            <div class="adm-daterange" role="group" aria-label="Date range">
+              <label><span class="adm-sr">From date</span><input type="date" id="au-from" aria-label="From date"></label>
+              <span aria-hidden="true">–</span>
+              <label><span class="adm-sr">To date</span><input type="date" id="au-to" aria-label="To date"></label>
+            </div>
+          </div>
+          <div class="adm-chips" id="au-chips" hidden></div>
+          <div class="table-wrap adm-table-wrap">
+            <table class="adm-table">
+              <thead><tr><th scope="col" data-sort="at">When</th><th scope="col">Who</th><th scope="col">What</th><th scope="col" class="col-contact">Record</th><th scope="col">Details</th></tr></thead>
+              <tbody id="au-body"></tbody>
+            </table>
+          </div>
+          <div class="adm-table-foot">
+            <div class="adm-foot-left"><label class="adm-size"><span>Rows per page</span><select id="au-size" aria-label="Rows per page"><option>10</option><option selected>25</option><option>50</option><option>100</option></select></label><p class="adm-muted" id="au-count" aria-live="polite"></p></div>
+            <nav class="adm-pager" id="au-pager" aria-label="Pages"></nav>
           </div>
         </section>
       </div>
@@ -472,6 +636,25 @@
             </div>
           </form>
         </div>
+        <div class="adm-form-cards adm-spaced">
+          <section class="adm-card adm-form-card" aria-labelledby="tiers-title">
+            <div class="adm-card-header adm-card-header-rule">
+              <span class="adm-tile adm-tone-primary" aria-hidden="true"><svg class="ic"><use href="#i-users"/></svg></span>
+              <div><h2 class="adm-card-title" id="tiers-title">Membership tiers</h2><p class="adm-muted">What each tier costs in GBP and whether it renews every year. A change applies to current balances straight away.</p></div>
+            </div>
+            <div id="tiers-list" class="adm-tiers"></div>
+          </section>
+          <form class="adm-card adm-form-card" id="finance-settings-form" novalidate>
+            <div class="adm-card-header adm-card-header-rule">
+              <span class="adm-tile adm-tone-warning" aria-hidden="true"><svg class="ic"><use href="#i-shield"/></svg></span>
+              <div><h2 class="adm-card-title">Finance settings</h2><p class="adm-muted">Controls for recording and verifying payments.</p></div>
+            </div>
+            <div class="form-alert" role="alert" hidden></div>
+            <label class="adm-switch"><input type="checkbox" id="fs-four-eyes" name="requireSecondVerifier"><span class="adm-switch-ui" aria-hidden="true"></span>
+              <span><strong>Require a different admin to verify payments</strong><br><span class="adm-muted">Recommended. When off, an admin can verify a payment they recorded; each one is flagged on the transaction and in the audit log.</span></span></label>
+            <div class="adm-form-foot"><p class="adm-muted adm-meta" id="fs-meta"></p><button class="adm-btn adm-btn-primary" type="submit">Save finance settings</button></div>
+          </form>
+        </div>
       </div>
 
       <!-- ---------------------------------------------------------- Admin users -->
@@ -492,14 +675,20 @@
             <div class="adm-form-foot"><span></span><button class="adm-btn adm-btn-primary" type="submit">Change password</button></div>
           </form>
 
-          <form class="adm-card adm-form-card" id="add-admin-form" novalidate>
+          <form class="adm-card adm-form-card" id="add-admin-form" data-perm="admins.manage" novalidate>
             <div class="adm-card-header adm-card-header-rule">
               <span class="adm-tile adm-tone-bright" aria-hidden="true"><svg class="ic"><use href="#i-user-plus"/></svg></span>
-              <div><h2 class="adm-card-title">Add another admin</h2><p class="adm-muted">Every admin can see all member details and change the payment accounts.</p></div>
+              <div><h2 class="adm-card-title">Add another admin</h2><p class="adm-muted">Choose the smallest role the person needs. Only super admins can add admins.</p></div>
             </div>
             <div class="form-alert" role="alert" hidden></div>
             <div class="adm-form-grid">
               <div class="adm-field full"><label for="a-user">Email</label><input id="a-user" name="username" type="email" autocomplete="off"></div>
+              <div class="adm-field full"><label for="a-role">Role</label>
+                <select id="a-role" name="role">
+                  <option value="membership_secretary">Membership secretary: members, imports, activations, email; read-only finance</option>
+                  <option value="treasurer">Treasurer: finance (record, verify, reports, tiers); read-only members</option>
+                  <option value="super_admin">Super admin: everything, including adding admins</option>
+                </select></div>
               <div class="adm-field full"><label for="a-pass">Temporary password</label>
                 <div class="adm-input-group"><input id="a-pass" name="password" type="password" autocomplete="new-password"><button type="button" class="adm-reveal" data-reveal="a-pass" aria-label="Show password" aria-pressed="false"><svg class="ic"><use href="#i-eye"/></svg></button></div></div>
             </div>
@@ -507,7 +696,7 @@
           </form>
         </div>
 
-        <section class="adm-card adm-table-card" aria-labelledby="admins-title">
+        <section class="adm-card adm-table-card" aria-labelledby="admins-title" data-perm="admins.manage">
           <div class="adm-card-header"><div><h2 class="adm-card-title" id="admins-title">Current admins</h2><p class="adm-muted">Give each person their own login rather than sharing one.</p></div></div>
           <div class="toolbar adm-toolbar">
             <label class="adm-search"><svg class="ic"><use href="#i-search"/></svg><span class="adm-sr">Search admins</span><input type="search" id="u-search" placeholder="Search by email"></label>
@@ -515,7 +704,7 @@
           <div class="adm-chips" id="u-chips" hidden></div>
           <div class="table-wrap adm-table-wrap">
             <table class="adm-table">
-              <thead><tr><th scope="col" data-sort="username">Admin</th><th scope="col" data-sort="created">Added</th><th scope="col"><span class="adm-sr">Notes</span></th></tr></thead>
+              <thead><tr><th scope="col" data-sort="username">Admin</th><th scope="col">Role</th><th scope="col" data-sort="created">Added</th><th scope="col"><span class="adm-sr">Actions</span></th></tr></thead>
               <tbody id="admin-list"></tbody>
             </table>
           </div>
@@ -546,12 +735,21 @@
     <div class="form-alert" role="alert" hidden></div>
     <p class="adm-alert adm-alert-warning" id="md-dupe" hidden></p>
     <dl class="adm-details" id="md-details"></dl>
+    <section class="adm-md-finance" id="md-finance" aria-labelledby="md-finance-title">
+      <div class="adm-md-finance-head"><h3 id="md-finance-title">Membership fees</h3>
+        <button type="button" class="adm-btn adm-btn-primary adm-btn-sm" id="md-pay" data-perm="finance.write"><svg class="ic"><use href="#i-cash"/></svg>Record payment</button></div>
+      <div class="adm-alert adm-alert-warning" id="md-review" hidden></div>
+      <div class="adm-md-figures" id="md-figures"></div>
+      <ul class="adm-md-tx" id="md-tx"></ul>
+    </section>
     <form id="md-form" novalidate>
       <div class="adm-form-grid">
+        <div class="adm-field"><label for="md-tier">Membership tier</label><select id="md-tier" name="tierId"></select></div>
         <div class="adm-field"><label for="md-status">Membership status</label>
           <select id="md-status" name="status"><option value="pending">Pending review</option><option value="approved">Approved</option><option value="rejected">Rejected</option></select></div>
         <div class="adm-field"><label for="md-payment">Fee payment</label>
-          <select id="md-payment" name="paymentStatus"><option value="pending_payment">Not paid</option><option value="payment_reported">Reported paid (check)</option><option value="paid">Paid (confirmed)</option></select></div>
+          <select id="md-payment" name="paymentStatus" aria-describedby="md-payment-hint"><option value="pending_payment">Not paid</option><option value="payment_reported">Reported paid (check)</option><option value="paid" disabled>Paid (confirmed)</option></select>
+          <span class="adm-hint" id="md-payment-hint">"Paid (confirmed)" is set automatically when a payment is verified.</span></div>
         <div class="adm-field full"><label for="md-notes">Admin notes</label><textarea id="md-notes" name="adminNotes" maxlength="2000"></textarea></div>
       </div>
       <div class="adm-form-foot">
@@ -652,22 +850,89 @@
   <div class="adm-dialog-body">
     <div class="form-alert" role="alert" hidden></div>
     <dl class="adm-details" id="dd-details"></dl>
+    <section class="adm-md-finance" aria-labelledby="dd-pay-title">
+      <div class="adm-md-finance-head"><h3 id="dd-pay-title">Payments linked to this pledge</h3>
+        <button type="button" class="adm-btn adm-btn-primary adm-btn-sm" id="dd-pay" data-perm="finance.write"><svg class="ic"><use href="#i-cash"/></svg>Record payment</button></div>
+      <ul class="adm-md-tx" id="dd-tx"></ul>
+    </section>
     <form id="dd-form" novalidate>
-      <div class="adm-field"><label for="dd-notes">Admin notes</label><textarea id="dd-notes" name="adminNotes" maxlength="2000"></textarea></div>
-      <div class="adm-form-foot"><span></span><button type="submit" class="adm-btn adm-btn-primary">Save notes</button></div>
+      <div class="adm-form-grid">
+        <div class="adm-field"><label for="dd-kenyan">Donor is a Kenyan citizen (their declaration)</label>
+          <select id="dd-kenyan" name="donorKenyan"><option value="yes">Yes</option><option value="no">No</option><option value="unknown">Unknown</option></select></div>
+        <div class="adm-field full"><label for="dd-notes">Admin notes</label><textarea id="dd-notes" name="adminNotes" maxlength="2000"></textarea></div>
+      </div>
+      <div class="adm-form-foot"><span></span><button type="submit" class="adm-btn adm-btn-primary">Save</button></div>
     </form>
   </div>
+</dialog>
+
+<!-- ================================================================ Record payment (drawer) -->
+<dialog id="rp-drawer" class="adm-drawer" aria-labelledby="rpd-title">
+  <form id="rpd-form" novalidate>
+    <div class="adm-dialog-head">
+      <div><h2 id="rpd-title">Record payment</h2><p class="adm-muted" id="rpd-sub">Saved as pending until another admin verifies it.</p></div>
+      <button type="button" class="adm-icon-btn" id="rpd-close" aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="adm-dialog-body">
+      <div class="form-alert" role="alert" hidden></div>
+      <div class="adm-form-grid">
+        <div class="adm-field full"><label for="rpd-type">Payment for</label><select id="rpd-type" name="type"></select></div>
+        <div class="adm-field full" data-show="member"><label for="rpd-member-input">Member</label>
+          <div class="adm-picker" id="rpd-member"><input type="text" id="rpd-member-input" autocomplete="off" placeholder="Search name, email or reference" role="combobox" aria-expanded="false" aria-controls="rpd-member-list" aria-autocomplete="list">
+            <div class="adm-gsearch-list" id="rpd-member-list" role="listbox" hidden></div></div>
+          <p class="adm-hint" id="rpd-member-balance"></p></div>
+        <div class="adm-field full" data-show="pledge"><label for="rpd-pledge">Pledge (optional)</label><select id="rpd-pledge" name="donationId"><option value="">Not linked to a pledge</option></select></div>
+        <div class="adm-field" data-show="payer"><label for="rpd-payer">Paid by</label><input id="rpd-payer" name="payerName" maxlength="120"></div>
+        <div class="adm-field" data-show="payer"><label for="rpd-payer-email">Payer email (for the receipt)</label><input id="rpd-payer-email" name="payerEmail" type="email" maxlength="200"></div>
+        <div class="adm-field"><label for="rpd-amount">Amount received</label><input id="rpd-amount" name="amount" type="number" min="0.01" step="0.01" inputmode="decimal"></div>
+        <div class="adm-field"><label for="rpd-currency">Currency</label><select id="rpd-currency" name="currency"><option>GBP</option><option>KES</option><option>USD</option><option>EUR</option></select></div>
+        <div class="adm-field" data-show="fx"><label for="rpd-rate">Exchange rate used</label>
+          <div class="adm-rate"><span>1 GBP =</span><input id="rpd-rate" name="fxRate" type="number" min="0.000001" step="0.0001" inputmode="decimal"><span id="rpd-rate-cur">KES</span></div>
+          <span class="adm-hint">Enter the rate on the day the money arrived. It is fixed once recorded; no live rates are used.</span></div>
+        <div class="adm-field" data-show="fx"><label>GBP equivalent</label><p class="adm-gbp" id="rpd-gbp" aria-live="polite">–</p></div>
+        <div class="adm-field"><label for="rpd-method">Method</label><select id="rpd-method" name="method"></select></div>
+        <div class="adm-field"><label for="rpd-account">Paid into</label><select id="rpd-account" name="account"></select></div>
+        <div class="adm-field"><label for="rpd-date">Date received</label><input id="rpd-date" name="dateReceived" type="date"></div>
+        <div class="adm-field"><label for="rpd-ref">M-Pesa code / bank reference</label><input id="rpd-ref" name="externalRef" maxlength="100"></div>
+        <div class="adm-field full" data-show="kenyan"><label for="rpd-kenyan">Donor is a Kenyan citizen (their declaration)</label>
+          <select id="rpd-kenyan" name="donorKenyan"><option value="unknown">Unknown</option><option value="yes">Yes</option><option value="no">No</option></select>
+          <span class="adm-hint">Donations without a "yes" are flagged for the party's records.</span></div>
+        <div class="adm-field full"><label for="rpd-notes">Notes</label><textarea id="rpd-notes" name="notes" maxlength="2000"></textarea></div>
+      </div>
+    </div>
+    <div class="adm-compose-foot">
+      <button type="button" class="adm-btn adm-btn-ghost" id="rpd-cancel">Cancel</button>
+      <span class="adm-spacer"></span>
+      <button type="submit" class="adm-btn adm-btn-primary" id="rpd-save">Save as pending</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ================================================================ Transaction details (drawer) -->
+<dialog id="tx-drawer" class="adm-drawer" aria-labelledby="txd-title">
+  <div class="adm-dialog-head">
+    <div><h2 id="txd-title"></h2><p class="adm-muted" id="txd-sub"></p></div>
+    <form method="dialog" class="dialog-close"><button class="adm-icon-btn" aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button></form>
+  </div>
+  <div class="adm-dialog-body">
+    <div class="form-alert" role="alert" hidden></div>
+    <div id="txd-flags"></div>
+    <dl class="adm-details" id="txd-details"></dl>
+    <h3 class="adm-drawer-h">History</h3>
+    <ol class="adm-timeline" id="txd-history"></ol>
+  </div>
+  <div class="adm-compose-foot" id="txd-actions"></div>
 </dialog>
 
 <!-- ================================================================ Profile -->
 <dialog id="profile-dialog" class="adm-dialog adm-dialog-sm" aria-labelledby="pf-title">
   <div class="adm-dialog-head">
-    <div class="adm-profile-head"><span class="adm-avatar adm-avatar-lg" id="pf-avatar" aria-hidden="true"></span><div><h2 id="pf-title"></h2><p class="adm-muted">Administrator</p></div></div>
+    <div class="adm-profile-head"><span class="adm-avatar adm-avatar-lg" id="pf-avatar" aria-hidden="true"></span><div><h2 id="pf-title"></h2><p class="adm-muted" id="pf-role">Administrator</p></div></div>
     <form method="dialog" class="dialog-close"><button class="adm-icon-btn" aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button></form>
   </div>
   <div class="adm-dialog-body">
     <dl class="adm-details" id="pf-details"></dl>
-    <div class="adm-form-foot"><span class="adm-muted">Roles arrive with the Finance module.</span><button type="button" class="adm-btn adm-btn-primary" id="pf-password"><svg class="ic"><use href="#i-key"/></svg>Change password</button></div>
+    <div class="adm-form-foot"><span></span><button type="button" class="adm-btn adm-btn-primary" id="pf-password"><svg class="ic"><use href="#i-key"/></svg>Change password</button></div>
   </div>
 </dialog>
 

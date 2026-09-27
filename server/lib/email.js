@@ -30,8 +30,10 @@ class EmailError extends Error {}
 
 function cleanHtml(html) {
   return sanitizeHtml(String(html || ''), {
-    allowedTags: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'ul', 'ol', 'li', 'a', 'h2', 'h3', 'blockquote', 'hr', 'div', 'span'],
-    allowedAttributes: { a: ['href'] },
+    allowedTags: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 's', 'ul', 'ol', 'li', 'a', 'h2', 'h3', 'blockquote', 'hr', 'div', 'span', 'table', 'tbody', 'tr', 'td', 'th'],
+    allowedAttributes: { a: ['href'], td: ['style'], th: ['style'] },
+    // Only simple layout styles on table cells (used by receipts).
+    allowedStyles: { '*': { padding: [/^\d+(\.\d+)?(px|em)?( \d+(\.\d+)?(px|em)?){0,3}$/], color: [/^#[0-9a-f]{3,6}$/i], 'text-align': [/^(left|right|center)$/] } },
     allowedSchemes: ['http', 'https', 'mailto'],
     transformTags: { a: sanitizeHtml.simpleTransform('a', { target: '_blank', rel: 'noopener' }) },
   }).slice(0, 200000);

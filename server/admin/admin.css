@@ -140,7 +140,7 @@ body.adm {
 .adm-btn .ic { width: 18px; height: 18px; }
 .adm-btn-sm { height: 36px; padding: 0 14px; font-size: 13px; }
 .adm-btn-block { width: 100%; }
-.adm-btn-primary { background: var(--adm-primary); color: var(--adm-on-primary); box-shadow: 0 2px 6px color-mix(in srgb, var(--accent) 35%, transparent); }
+.adm-btn-primary, .adm a.adm-btn-primary { background: var(--adm-primary); color: var(--adm-on-primary); box-shadow: 0 2px 6px color-mix(in srgb, var(--accent) 35%, transparent); }
 .adm-btn-primary:hover { background: var(--adm-primary-hover); box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 40%, transparent); }
 .adm-btn-primary:active { transform: translateY(1px); }
 .adm-btn-outline { border-color: color-mix(in srgb, var(--adm-link) 55%, transparent); color: var(--adm-link); }
@@ -771,12 +771,132 @@ a.adm-file:hover { border-color: var(--adm-link); }
   .adm-compose .adm-dialog-body { max-height: calc(100vh - 240px); }
 }
 
+/* ---------------------------------------------------------------- roles: hide what a role cannot use */
+.adm .adm-noperm { display: none !important; }
+
+/* ---------------------------------------------------------------- side drawers (record payment, transaction) */
+.adm-drawer { position: fixed; inset: 0 0 0 auto; width: min(560px, 100vw); height: 100vh; max-height: 100vh; margin: 0; padding: 0; border: 0; border-radius: var(--adm-radius) 0 0 var(--adm-radius); background: var(--adm-surface); color: var(--adm-text); box-shadow: var(--adm-shadow-lg); display: none; }
+.adm-drawer[open] { display: flex; flex-direction: column; animation: adm-drawer-in .2s ease-out; }
+.adm-drawer > form { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.adm-drawer::backdrop { background: rgba(8, 20, 10, .45); }
+.adm-drawer .adm-dialog-body { flex: 1; overflow-y: auto; }
+.adm-drawer .adm-compose-foot { flex-wrap: wrap; }
+.adm-drawer-h { margin: 22px 0 10px; font-size: 14px; font-weight: 700; }
+@keyframes adm-drawer-in { from { transform: translateX(40px); opacity: 0; } }
+.adm-rate { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--adm-muted); }
+.adm .adm-rate input[type="number"] { flex: 1; }
+.adm-gbp { margin: 0; padding: 9px 12px; border-radius: var(--adm-radius-sm); background: var(--adm-primary-soft); color: var(--adm-link); font-weight: 700; }
+.adm-picker { position: relative; }
+.adm-picker .adm-gsearch-list { top: calc(100% + 4px); }
+.adm-timeline { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 2px solid var(--adm-border); }
+.adm-timeline li { position: relative; display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 0 0 12px 12px; font-size: 13px; }
+.adm-timeline li::before { content: ""; position: absolute; left: -20px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: var(--adm-surface); border: 2px solid var(--adm-link); }
+.adm-timeline-when { flex-basis: 100%; color: var(--adm-muted); font-size: 12px; }
+.adm-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+.adm-table .amount.adm-out, .adm-out { color: var(--adm-danger-fg); }
+.adm-table tr.adm-void td { opacity: .6; }
+.adm-table tr.adm-void .amount { text-decoration: line-through; }
+.adm-flagged { color: var(--adm-danger-fg); }
+.adm-header-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.adm-amount-range { display: flex; align-items: center; gap: 6px; color: var(--adm-muted); }
+.adm .adm-amount-range input { width: 110px; }
+
+/* ---------------------------------------------------------------- member / pledge finance blocks */
+.adm-md-finance { margin: 0 0 22px; padding: 16px 18px; border: 1px solid var(--adm-border); border-radius: var(--adm-radius-sm); }
+.adm-md-finance-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.adm-md-finance-head h3 { margin: 0; font-size: 15px; }
+.adm-md-figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 12px; }
+.adm-fig { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border-radius: var(--adm-radius-sm); background: var(--adm-surface-2); }
+.adm-fig span { font-size: 12px; color: var(--adm-muted); }
+.adm-fig strong { font-size: 15px; }
+.adm-fig.bad strong { color: var(--adm-danger-fg); }
+.adm-fig.good strong { color: var(--adm-link); }
+.adm-fig.warn strong { color: var(--adm-warning-fg); }
+.adm-md-tx { list-style: none; margin: 0; padding: 0; }
+.adm-md-tx li + li { border-top: 1px solid var(--adm-border); }
+.adm-md-tx button { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; width: 100%; padding: 8px 4px; border: 0; background: none; color: var(--adm-text); font: inherit; font-size: 14px; text-align: left; cursor: pointer; border-radius: var(--adm-radius-sm); }
+.adm-md-tx button:hover { background: var(--adm-row-hover); }
+.adm-md-tx .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--adm-muted); }
+.adm-md-finance .adm-alert { margin-bottom: 12px; }
+.adm-md-finance .adm-alert .adm-btn { margin-left: auto; }
+
+/* ---------------------------------------------------------------- dashboard money cards */
+.adm-growth { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(0, 1.4fr); gap: 16px; align-items: end; }
+.adm-growth-n { margin: 18px 0 6px; font-size: 30px; font-weight: 700; }
+.adm-growth-text p:last-child { margin: 0; font-size: 13px; }
+.adm-growth-chart { min-height: 170px; margin: 0 -8px -12px 0; }
+.adm-chart-sm { min-height: 230px; }
+button.adm-earn-tab { border-style: solid; background: none; cursor: pointer; font: inherit; font-size: 13px; font-weight: 600; color: var(--adm-muted); }
+button.adm-earn-tab strong { font-size: 14px; color: var(--adm-text); }
+button.adm-earn-tab:hover { border-color: var(--adm-link); }
+button.adm-earn-tab.selected { border-color: var(--adm-link); background: var(--adm-primary-soft); color: var(--adm-link); }
+.adm-list-end { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-size: 13px; }
+.adm-list .adm-tile { width: 36px; height: 36px; }
+.adm-list .adm-tile .ic { width: 18px; height: 18px; }
+
+/* ---------------------------------------------------------------- reports */
+.adm-report-bar { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.adm-report-filters { display: flex; flex-wrap: wrap; gap: 12px; }
+.adm-report-filters .adm-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 600; color: var(--adm-muted); }
+.adm .adm-report-filters input, .adm .adm-report-filters select { width: auto; min-width: 150px; }
+.adm-report-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.adm-stats-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 24px; margin-bottom: 24px; }
+.adm-kpi { display: flex; flex-direction: column; gap: 4px; padding: 18px 20px; }
+.adm-kpi-label { font-size: 13px; font-weight: 600; color: var(--adm-muted); }
+.adm-kpi strong { font-size: 24px; }
+.adm-kpi strong.warn { color: var(--adm-warning-fg); }
+.adm-kpi-sub { font-size: 12px; color: var(--adm-muted); }
+.adm-mini-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.adm-mini-table th { padding: 6px 0; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--adm-muted); text-align: right; }
+.adm-mini-table th:first-child, .adm-mini-table td:first-child { text-align: left; }
+.adm-mini-table td { padding: 8px 0; border-top: 1px solid var(--adm-border); text-align: right; }
+.adm-mini-table td:last-child { font-weight: 700; }
+.adm-report-exports { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; }
+.adm-donor-export { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; padding-top: 12px; border-top: 1px solid var(--adm-border); }
+.adm-donor-export .adm-field { display: flex; flex-direction: column; gap: 4px; flex: 1 1 180px; font-size: 12px; font-weight: 600; color: var(--adm-muted); }
+.adm-dash > .adm-table-card { padding: 0; }
+
+/* ---------------------------------------------------------------- audit log */
+.adm-audit-diff summary { cursor: pointer; font-size: 13px; color: var(--adm-link); }
+.adm-audit-diff table { margin-top: 6px; border-collapse: collapse; font-size: 12px; }
+.adm-audit-diff th, .adm-audit-diff td { padding: 3px 10px 3px 0; text-align: left; vertical-align: top; max-width: 260px; overflow-wrap: anywhere; }
+.adm-audit-diff th { color: var(--adm-muted); font-weight: 600; }
+.adm-table tr.adm-flag-row { box-shadow: inset 3px 0 0 var(--adm-danger-fg); }
+
+/* ---------------------------------------------------------------- tiers and settings */
+.adm-spaced { margin-top: 24px; }
+.adm-tiers { display: flex; flex-direction: column; gap: 12px; }
+.adm-tier { display: grid; grid-template-columns: minmax(0, 2fr) minmax(90px, 1fr) minmax(110px, 1fr) auto; gap: 10px; align-items: end; padding-bottom: 12px; border-bottom: 1px solid var(--adm-border); }
+@container (max-width: 520px) { .adm-tier { grid-template-columns: 1fr 1fr; } }
+.adm-switch { display: flex; align-items: flex-start; gap: 14px; cursor: pointer; font-size: 14px; }
+.adm-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.adm-switch-ui { flex: none; position: relative; width: 42px; height: 24px; margin-top: 2px; border-radius: 999px; background: var(--adm-neutral-soft); border: 1px solid var(--adm-border); transition: background-color .15s; }
+.adm-switch-ui::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .15s; }
+.adm-switch input:checked + .adm-switch-ui { background: var(--adm-primary); border-color: var(--adm-primary); }
+.adm-switch input:checked + .adm-switch-ui::after { transform: translateX(18px); }
+.adm-switch input:focus-visible + .adm-switch-ui { outline: 2px solid var(--adm-link); outline-offset: 2px; }
+.adm-switch input:disabled + .adm-switch-ui { opacity: .5; }
+
+@media (max-width: 767px) {
+  .adm-drawer { border-radius: 0; }
+  .adm-growth { grid-template-columns: 1fr; }
+  .adm-report-bar { flex-direction: column; align-items: stretch; }
+  .adm .adm-report-filters input, .adm .adm-report-filters select { min-width: 0; width: 100%; }
+  .adm-report-filters .adm-field { flex: 1 1 140px; }
+  .adm .adm-amount-range input { width: 100%; }
+  .adm-amount-range { flex: 1 1 100%; }
+  .adm-amount-range label { flex: 1; }
+}
+
 /* ---------------------------------------------------------------- tablet: fewer columns, not sideways scrolling */
 @media (min-width: 768px) and (max-width: 1279px) {
   .adm-table .col-reg, .adm-table .col-msg { display: none; }
 }
+.adm-kenyan-sub { display: none; }
 @media (min-width: 768px) and (max-width: 1023px) {
-  .adm-table .col-contact, .adm-table .col-pledged { display: none; }
+  .adm-table .col-contact, .adm-table .col-pledged, .adm-table .col-kenyan { display: none; }
+  /* The Kenyan-citizen flag moves under the donor's name. */
+  .adm-kenyan-sub { display: inline-block; margin-top: 3px; padding: 1px 8px; border-radius: 4px; background: var(--adm-warning-soft); color: var(--adm-warning-fg); font-size: 12px; font-weight: 600; }
   .adm-topbar .adm-gsearch { flex-basis: 220px; }
 }
 

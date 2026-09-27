@@ -66,6 +66,16 @@ function unsubscribeUrl(memberId, email) {
   return token ? `${config().baseUrl}/unsubscribe?m=${memberId}&t=${token}` : null;
 }
 
+// Signed links for other purposes (e.g. a payer's receipt page).
+function sign(purpose, value) {
+  const secret = secretFor(config());
+  return secret ? crypto.createHmac('sha256', secret).update(`${purpose}:${value}`).digest('base64url').slice(0, 32) : null;
+}
+function checkSign(purpose, value, token) {
+  const expected = sign(purpose, value);
+  return Boolean(expected && token && expected.length === String(token).length && crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(String(token))));
+}
+
 // ---------------------------------------------------------------- rendering
 
 const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -197,5 +207,5 @@ async function send(message) {
 module.exports = {
   TRANSPORTS, config, problems, parseAddress, send, SendError,
   layout, merge, escapeHtml, htmlToText,
-  unsubscribeUrl, checkUnsubscribeToken,
+  unsubscribeUrl, checkUnsubscribeToken, sign, checkSign,
 };

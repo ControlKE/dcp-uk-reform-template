@@ -152,6 +152,15 @@ You need your own domain first (for example `dcpuk.org.uk`); `*.railway.app` add
 
 ---
 
+## After the Finance update (migration 004)
+
+- Existing admins become **super admins**. Add the treasurer and membership secretary as separate admins with their own roles (Admin users).
+- Every existing member is put on the **Ordinary** tier. Members whose recorded fee doesn't match £20, or who were marked paid before Finance with no transaction on record, are **flagged for fee review**. The treasurer records and verifies their payments, then clears each flag with a note. Their original fee and currency are kept.
+- The **four-eyes check** is on: whoever records a payment can't verify it. With a single admin, payments stay pending until a second admin exists (or the check is switched off, which flags every self-verified payment).
+- New optional variables: `FEATURE_STRIPE` and `FEATURE_MPESA_STK`. Leave them unset or `false`.
+
+---
+
 ## Looking after the live data
 
 - **Backups.** The database holds members' personal data, including ID numbers. Railway → MySQL → **Data** lets you connect and export. Take regular backups and store them securely.

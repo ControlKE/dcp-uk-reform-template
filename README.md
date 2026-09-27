@@ -51,6 +51,28 @@ Schema changes are numbered files in `server/migrations`. Locally they apply aut
 
 The admin's **Email** app shows contact-form messages and new membership applications in its Inbox. It sends replies, one-to-one messages and bulk emails to member segments. Locally `MAIL_TRANSPORT=log` keeps everything in **Sent** without delivering it. Choosing a provider, the domain's DNS records and the environment variables are covered in DEPLOY.md, "Email".
 
+## Admin roles
+
+| Role | Can |
+|---|---|
+| **Super admin** | Everything, including adding admins and changing their roles |
+| **Treasurer** | Finance: record, verify, reconcile, reject and void payments; reports and exports; tiers, payment accounts and finance settings; the audit log. Can read members, but not edit them. |
+| **Membership secretary** | Members (edit, approve, reject), email, and later imports and activations. Finance is read-only. |
+
+Roles are enforced by the API; the admin screens only hide what a role can't use. Existing admins became super admins when the Finance migration ran. There must always be at least one super admin.
+
+## Finance
+
+- **Nobody becomes "Paid" by hand.** A member is Paid (confirmed) only when verified transactions cover their tier's dues. "I've paid" from the website creates a *pending* transaction for the treasurer, and a donation pledge becomes Received only when a verified payment is linked to it.
+- **Recording and verifying are separate steps.** By default a different admin must verify a payment (four-eyes check). It can be switched off under Payment accounts → Finance settings; then verifying your own entry is allowed but flagged on the transaction and in the audit log.
+- **Other currencies** (KES, USD, EUR) are stored as paid, with the exchange rate the treasurer types in ("1 GBP = 167.5 KES") and the GBP equivalent fixed at that moment. There are no live rate lookups, so reports never change after the fact. A verified transaction can't be edited; void it (with a reason) and record it again.
+- **Tiers** (Ordinary £20 a year, Stakeholder £500 a year, Visit contribution £200 once) are editable under Payment accounts. A member's balance is: periods billed since fees started counting × tier amount, less verified fee payments and refunds.
+- **Receipts** are numbered `DCPUK-YYYY-NNNNN`, issued on verification, emailed to the payer, and printable from a signed link. The wording is a plain "Payment receipt": DCP UK is not a UK charity, so there is no Gift Aid or tax language.
+- **Donations** record the donor's own "I am a Kenyan citizen" answer (yes / no / prefer not to say). Anything other than "yes" is flagged. Reports → Donations summary has a donor report per month, quarter or year for party HQ.
+- **Audit log** (Settings → Audit log): every change to money, members, pledges, settings and admins, with before and after values. The app can only add entries, never change or delete them.
+- **Fee review flag:** when Finance was installed, members whose recorded fee didn't match their tier, or who were marked paid with no transaction on record, were flagged for the treasurer (Members → "Fee needs review"). Record and verify their payment, then clear the flag with a note.
+- **Online payments** (Stripe, M-Pesa STK push): the tables are ready, but only stub webhooks exist, behind `FEATURE_STRIPE` / `FEATURE_MPESA_STK` (off). No live payments are taken.
+
 ## Pinned dependencies
 
 - **ApexCharts is pinned at 4.7.0 on purpose. Do not upgrade it.** 4.7.0 is the last MIT-licensed release. From 5.0 ApexCharts uses a dual licence: free only for organisations under $2M revenue, with restrictions on platforms used by other people. The dashboard charts need nothing from 5.x. An upgrade needs a licence decision first. The exact version (no `^`) is in `server/package.json`.

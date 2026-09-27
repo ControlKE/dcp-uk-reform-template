@@ -75,7 +75,28 @@ async function one(sql, params = []) {
   return rows[0] ?? null;
 }
 
+// Runs fn inside one database transaction: everything commits together or not at all.
+// fn gets { query, one } bound to the transaction's connection.
+async function transaction(fn) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const tx = {
+      query: async (sql, params = []) => (await conn.execute(sql, params))[0],
+      one: async (sql, params = []) => (await conn.execute(sql, params))[0][0] ?? null,
+    };
+    const result = await fn(tx);
+    await conn.commit();
+    return result;
+  } catch (err) {
+    await conn.rollback().catch(() => {});
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
 // Raw pool access for the migrations runner.
 const raw = () => pool;
 
-module.exports = { init, query, one, config, raw };
+module.exports = { init, query, one, transaction, config, raw };
