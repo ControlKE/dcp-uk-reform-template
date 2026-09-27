@@ -9,8 +9,10 @@
 <link rel="icon" href="/assets/img/dcp-logo.png" type="image/png">
 <!-- Only the DCP colour tokens from the public site: none of its navbar or
      component styles, so nothing there can clash with the admin layout. -->
+<link rel="preload" href="vendor/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/assets/css/tokens.css">
 <link rel="stylesheet" href="admin.css">
+<script src="theme-init.js"></script>
 </head>
 <body class="adm">
 
@@ -45,6 +47,19 @@
   <symbol id="i-user-plus" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2M16 11h6M19 8v6"/></symbol>
   <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 1 1 8 0v4"/></symbol>
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8h.01M11 12h1v4h1"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v1.5M12 19.5V21M3 12h1.5M19.5 12H21M5.64 5.64l1.06 1.06M17.3 17.3l1.06 1.06M5.64 18.36l1.06-1.06M17.3 6.7l1.06-1.06"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M10 5a2 2 0 1 1 4 0 7 7 0 0 1 4 6v3a4 4 0 0 0 2 3H4a4 4 0 0 0 2-3v-3a7 7 0 0 1 4-6M9 17v1a3 3 0 0 0 6 0v-1"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="7" r="4"/><path d="M6 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/></symbol>
+  <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M7 9l5-5 5 5M12 4v12"/></symbol>
+  <symbol id="i-user-check" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2M15 11l2 2 4-4"/></symbol>
+  <symbol id="i-receipt" viewBox="0 0 24 24"><path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16l-3-2-2 2-2-2-2 2-2-2-3 2M9 7h6M9 11h6M13 15h2"/></symbol>
+  <symbol id="i-report" viewBox="0 0 24 24"><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="8" y="3" width="8" height="4" rx="1"/><path d="M9 17v-4M12 17v-6M15 17v-2"/></symbol>
+  <symbol id="i-trending-up" viewBox="0 0 24 24"><path d="m3 17 6-6 4 4 8-8M14 7h7v7"/></symbol>
+  <symbol id="i-map-pin" viewBox="0 0 24 24"><circle cx="12" cy="11" r="3"/><path d="M17.66 16.66 13.41 20.9a2 2 0 0 1-2.82 0l-4.25-4.24a8 8 0 1 1 11.32 0"/></symbol>
+  <symbol id="i-chart-pie" viewBox="0 0 24 24"><path d="M10 3.2A9 9 0 1 0 20.8 14a1 1 0 0 0-1-1H13a2 2 0 0 1-2-2V4a.9.9 0 0 0-1-.8"/><path d="M15 3.5A9 9 0 0 1 20.5 9H16a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-filter-funnel" viewBox="0 0 24 24"><path d="M4 4h16v2.17a2 2 0 0 1-.59 1.42L15 12v7l-6 2v-8.5L4.52 7.56A2 2 0 0 1 4 6.21z"/></symbol>
   <symbol id="i-dots" viewBox="0 0 24 24"><path d="M12 5.5h.01M12 12h.01M12 18.5h.01" stroke-width="3"/></symbol>
   <symbol id="i-sort" viewBox="0 0 24 24"><path d="m8 9 4-4 4 4M16 15l-4 4-4-4"/></symbol>
   <symbol id="i-sort-asc" viewBox="0 0 24 24"><path d="m8 14 4-4 4 4"/></symbol>
@@ -106,13 +121,19 @@
       <button type="button" class="adm-icon-btn adm-sidebar-close" id="adm-sidebar-close" aria-label="Close menu"><svg class="ic"><use href="#i-x"/></svg></button>
     </div>
     <nav class="tabs adm-nav" aria-label="Admin sections">
-      <p class="adm-nav-heading"><span class="adm-nav-label">Dashboard</span></p>
-      <button type="button" data-tab="overview" class="selected" title="Overview"><svg class="ic"><use href="#i-dashboard"/></svg><span class="adm-nav-label">Overview</span></button>
-      <p class="adm-nav-heading"><span class="adm-nav-label">Records</span></p>
+      <button type="button" data-tab="overview" class="selected" title="Dashboard"><svg class="ic"><use href="#i-dashboard"/></svg><span class="adm-nav-label">Dashboard</span></button>
+      <p class="adm-nav-heading"><span class="adm-nav-label">Apps</span></p>
+      <button type="button" class="adm-soon" data-soon="the email app" title="Email: coming with the email app" aria-disabled="true"><svg class="ic"><use href="#i-mail"/></svg><span class="adm-nav-label">Email</span><span class="adm-soon-tag" aria-hidden="true">Soon</span><span class="adm-sr">(coming soon)</span></button>
+      <p class="adm-nav-heading"><span class="adm-nav-label">Membership</span></p>
       <button type="button" data-tab="members" title="Members"><svg class="ic"><use href="#i-users"/></svg><span class="adm-nav-label">Members</span><span class="adm-nav-badge" id="nav-badge-members" hidden></span></button>
-      <button type="button" data-tab="donations" title="Donations"><svg class="ic"><use href="#i-heart"/></svg><span class="adm-nav-label">Donations</span></button>
-      <p class="adm-nav-heading"><span class="adm-nav-label">Settings</span></p>
+      <button type="button" class="adm-soon" data-soon="the member import" title="Import members: coming with the member import" aria-disabled="true"><svg class="ic"><use href="#i-upload"/></svg><span class="adm-nav-label">Import members</span><span class="adm-soon-tag" aria-hidden="true">Soon</span><span class="adm-sr">(coming soon)</span></button>
+      <button type="button" class="adm-soon" data-soon="member logins" title="Activations: coming with member logins" aria-disabled="true"><svg class="ic"><use href="#i-user-check"/></svg><span class="adm-nav-label">Activations</span><span class="adm-soon-tag" aria-hidden="true">Soon</span><span class="adm-sr">(coming soon)</span></button>
+      <p class="adm-nav-heading"><span class="adm-nav-label">Finance</span></p>
+      <button type="button" class="adm-soon" data-soon="the Finance module" title="Transactions: coming with the Finance module" aria-disabled="true"><svg class="ic"><use href="#i-receipt"/></svg><span class="adm-nav-label">Transactions</span><span class="adm-soon-tag" aria-hidden="true">Soon</span><span class="adm-sr">(coming soon)</span></button>
+      <button type="button" data-tab="donations" title="Donations"><svg class="ic"><use href="#i-heart"/></svg><span class="adm-nav-label">Donations</span><span class="adm-nav-badge" id="nav-badge-donations" hidden></span></button>
       <button type="button" data-tab="accounts" title="Payment accounts"><svg class="ic"><use href="#i-bank"/></svg><span class="adm-nav-label">Payment accounts</span></button>
+      <button type="button" class="adm-soon" data-soon="the Finance module" title="Reports: coming with the Finance module" aria-disabled="true"><svg class="ic"><use href="#i-report"/></svg><span class="adm-nav-label">Reports</span><span class="adm-soon-tag" aria-hidden="true">Soon</span><span class="adm-sr">(coming soon)</span></button>
+      <p class="adm-nav-heading"><span class="adm-nav-label">Settings</span></p>
       <button type="button" data-tab="users" title="Admin users"><svg class="ic"><use href="#i-shield"/></svg><span class="adm-nav-label">Admin users</span></button>
     </nav>
     <span class="adm-flag-stripe" aria-hidden="true"></span>
@@ -123,11 +144,30 @@
     <header class="adm-topbar">
       <button type="button" class="adm-icon-btn" id="adm-menu-btn" aria-label="Toggle navigation" aria-controls="adm-sidebar" aria-expanded="false"><svg class="ic"><use href="#i-menu"/></svg></button>
       <div class="adm-titles">
-        <p class="adm-crumbs"><span>Admin</span><span aria-hidden="true">/</span><span id="adm-crumb">Overview</span></p>
-        <h1 class="adm-page-title" id="adm-title">Overview</h1>
+        <p class="adm-crumbs"><span>Admin</span><span aria-hidden="true">/</span><span id="adm-crumb">Dashboard</span></p>
+        <h1 class="adm-page-title" id="adm-title">Dashboard</h1>
+      </div>
+      <div class="adm-gsearch" id="adm-gsearch" role="search">
+        <label class="adm-gsearch-box">
+          <svg class="ic"><use href="#i-search"/></svg>
+          <span class="adm-sr">Search members, donations and admins</span>
+          <input type="search" id="adm-gsearch-input" placeholder="Search…" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="adm-gsearch-list" aria-autocomplete="list">
+          <kbd class="adm-kbd" id="adm-gsearch-kbd" aria-hidden="true">Ctrl K</kbd>
+        </label>
+        <div class="adm-gsearch-list" id="adm-gsearch-list" role="listbox" aria-label="Search results" hidden></div>
       </div>
       <div class="adm-topbar-actions" id="admin-nav" hidden>
-        <a href="/" class="adm-btn adm-btn-ghost adm-btn-sm" target="_blank" rel="noopener"><svg class="ic"><use href="#i-external"/></svg><span class="adm-hide-sm">View site</span><span class="adm-sr">(opens in a new tab)</span></a>
+        <button type="button" class="adm-icon-btn adm-search-open" id="adm-search-open" aria-label="Search"><svg class="ic"><use href="#i-search"/></svg></button>
+        <button type="button" class="adm-icon-btn" id="adm-theme" aria-label="Switch to dark theme" title="Switch theme"><svg class="ic"><use href="#i-moon"/></svg></button>
+        <div class="adm-bell">
+          <button type="button" class="adm-icon-btn" id="adm-bell-btn" aria-haspopup="true" aria-expanded="false" aria-controls="adm-bell-menu" aria-label="Notifications">
+            <svg class="ic"><use href="#i-bell"/></svg><span class="adm-bell-count" id="adm-bell-count" hidden></span>
+          </button>
+          <div class="adm-dropdown adm-bell-menu" id="adm-bell-menu" hidden>
+            <div class="adm-dropdown-head"><strong>Notifications</strong><span class="adm-badge good" id="adm-bell-summary"></span></div>
+            <div id="adm-bell-list" class="adm-bell-list"></div>
+          </div>
+        </div>
         <div class="adm-user">
           <button type="button" class="adm-user-btn" id="adm-user-btn" aria-haspopup="true" aria-expanded="false" aria-controls="adm-user-menu">
             <span class="adm-avatar" id="adm-avatar" aria-hidden="true"></span>
@@ -139,6 +179,7 @@
               <span class="adm-avatar" id="adm-avatar-2" aria-hidden="true"></span>
               <div><strong id="adm-who-2"></strong><span>Administrator</span></div>
             </div>
+            <button type="button" id="adm-profile"><svg class="ic"><use href="#i-user"/></svg>Profile</button>
             <button type="button" id="adm-change-password"><svg class="ic"><use href="#i-key"/></svg>Change password</button>
             <button type="button" id="logout"><svg class="ic"><use href="#i-logout"/></svg>Sign out</button>
           </div>
@@ -151,13 +192,73 @@
       <!-- ---------------------------------------------------------- Overview -->
       <div data-panel="overview">
         <div class="adm-alert" id="setup-reminder" role="status" hidden></div>
-        <div class="adm-stats" id="stats" aria-live="polite"></div>
-        <section class="adm-card" aria-labelledby="attn-title">
-          <div class="adm-card-header">
-            <div><h2 class="adm-card-title" id="attn-title">Needs attention</h2><p class="adm-muted">Shortcuts to the records waiting on an admin.</p></div>
-          </div>
-          <ul class="adm-attn" id="attention"></ul>
-        </section>
+        <div class="adm-dash">
+          <!-- Row 1: small stat cards + income growth -->
+          <section class="adm-card adm-mini adm-span-mini" aria-labelledby="dash-new-title">
+            <p class="adm-mini-label" id="dash-new-title">New members</p>
+            <p class="adm-mini-n" id="dash-new-n">–</p>
+            <p class="adm-mini-sub" id="dash-new-sub"></p>
+            <div class="adm-mini-chart" id="chart-new" role="img" aria-label="Registrations per day this week"></div>
+          </section>
+          <section class="adm-card adm-mini adm-span-mini adm-placeholder-card" aria-labelledby="dash-money-title">
+            <p class="adm-mini-label" id="dash-money-title">Money in</p>
+            <p class="adm-mini-n adm-muted-n">–</p>
+            <p class="adm-placeholder-note"><svg class="ic"><use href="#i-info"/></svg>Available after Finance is set up</p>
+          </section>
+          <section class="adm-card adm-mini adm-span-mini adm-mini-link" role="button" tabindex="0" id="dash-pending" aria-labelledby="dash-pending-title">
+            <span class="adm-tile adm-tone-warning" aria-hidden="true"><svg class="ic"><use href="#i-clock"/></svg></span>
+            <p class="adm-mini-n" id="dash-pending-n">–</p>
+            <p class="adm-mini-label" id="dash-pending-title">Pending approvals</p>
+            <p class="adm-mini-sub">Applications to review</p>
+          </section>
+          <section class="adm-card adm-mini adm-span-mini adm-mini-link" role="button" tabindex="0" id="dash-verify" aria-labelledby="dash-verify-title">
+            <span class="adm-tile adm-tone-bright" aria-hidden="true"><svg class="ic"><use href="#i-cash"/></svg></span>
+            <p class="adm-mini-n" id="dash-verify-n">–</p>
+            <p class="adm-mini-label" id="dash-verify-title">Payments to verify</p>
+            <p class="adm-mini-sub">Members who say they have paid</p>
+          </section>
+          <section class="adm-card adm-span-wide adm-placeholder-card" aria-labelledby="dash-growth-title">
+            <div class="adm-card-header"><div><h2 class="adm-card-title" id="dash-growth-title">Income growth</h2><p class="adm-muted">Weekly income, current day highlighted</p></div></div>
+            <div class="adm-placeholder"><span class="adm-tile adm-tone-primary"><svg class="ic"><use href="#i-trending-up"/></svg></span><strong>Available after Finance is set up</strong><span>Income totals come from verified transactions, which arrive with the Finance module.</span></div>
+          </section>
+
+          <!-- Row 2: earnings report + members by chapter -->
+          <section class="adm-card adm-span-8 adm-placeholder-card" aria-labelledby="dash-earn-title">
+            <div class="adm-card-header"><div><h2 class="adm-card-title" id="dash-earn-title">Earnings report</h2><p class="adm-muted">Monthly income by type</p></div></div>
+            <div class="adm-earn-tabs" aria-hidden="true">
+              <span class="adm-earn-tab"><svg class="ic"><use href="#i-users"/></svg>Membership fees</span>
+              <span class="adm-earn-tab"><svg class="ic"><use href="#i-shield"/></svg>Stakeholder</span>
+              <span class="adm-earn-tab"><svg class="ic"><use href="#i-map-pin"/></svg>Visit contributions</span>
+              <span class="adm-earn-tab"><svg class="ic"><use href="#i-heart"/></svg>Donations</span>
+            </div>
+            <div class="adm-placeholder"><strong>Available after Finance is set up</strong><span>Each tab will chart verified income for that type, month by month.</span></div>
+          </section>
+          <section class="adm-card adm-span-4" aria-labelledby="dash-chapter-title">
+            <div class="adm-card-header"><div><h2 class="adm-card-title" id="dash-chapter-title">Members by chapter</h2><p class="adm-muted" id="dash-chapter-sub"></p></div></div>
+            <div id="chart-chapters" class="adm-chart" role="img" aria-label="Members by chapter"></div>
+          </section>
+
+          <!-- Row 3 -->
+          <section class="adm-card adm-span-4 adm-placeholder-card" aria-labelledby="dash-tier-title">
+            <div class="adm-card-header"><div><h2 class="adm-card-title" id="dash-tier-title">Membership tiers</h2><p class="adm-muted">Ordinary, Stakeholder and Visit contribution</p></div></div>
+            <div class="adm-placeholder"><span class="adm-tile adm-tone-primary"><svg class="ic"><use href="#i-chart-pie"/></svg></span><strong>Available after Finance is set up</strong><span>Tiers are added with the Finance module.</span></div>
+          </section>
+          <section class="adm-card adm-span-4" aria-labelledby="dash-recent-title">
+            <div class="adm-card-header"><div><h2 class="adm-card-title" id="dash-recent-title">Recent registrations</h2><p class="adm-muted">Newest first</p></div>
+              <button type="button" class="adm-btn adm-btn-ghost adm-btn-sm" id="dash-recent-all">View all</button></div>
+            <ul class="adm-list" id="dash-recent"></ul>
+          </section>
+          <section class="adm-card adm-span-4 adm-placeholder-card" aria-labelledby="dash-tx-title">
+            <div class="adm-card-header"><div><h2 class="adm-card-title" id="dash-tx-title">Recent transactions</h2><p class="adm-muted">Payments recorded by the treasurer</p></div></div>
+            <div class="adm-placeholder"><span class="adm-tile adm-tone-primary"><svg class="ic"><use href="#i-receipt"/></svg></span><strong>Available after Finance is set up</strong><span>Recorded and verified payments will be listed here.</span></div>
+          </section>
+
+          <!-- Row 4 -->
+          <section class="adm-card adm-span-12" aria-labelledby="dash-funnel-title">
+            <div class="adm-card-header"><div><h2 class="adm-card-title" id="dash-funnel-title">Activation funnel</h2><p class="adm-muted">From registration to a member who has signed in</p></div></div>
+            <ol class="adm-funnel" id="dash-funnel"></ol>
+          </section>
+        </div>
       </div>
 
       <!-- ---------------------------------------------------------- Members -->
@@ -181,7 +282,7 @@
           <div class="adm-chips" id="m-chips" hidden></div>
           <div class="table-wrap adm-table-wrap">
             <table class="adm-table">
-              <thead><tr><th scope="col" data-sort="reference" class="col-ref">Reference</th><th scope="col" data-sort="name">Name</th><th scope="col" data-sort="email">Contact</th><th scope="col" data-sort="chapter">Chapter</th><th scope="col" data-sort="registered">Registered</th><th scope="col" data-sort="payment">Payment</th><th scope="col" data-sort="status">Status</th><th scope="col"><span class="adm-sr">Actions</span></th></tr></thead>
+              <thead><tr><th scope="col" data-sort="reference" class="col-ref">Reference</th><th scope="col" data-sort="name">Name</th><th scope="col" data-sort="email" class="col-contact">Contact</th><th scope="col" data-sort="chapter">Chapter</th><th scope="col" data-sort="registered" class="col-reg">Registered</th><th scope="col" data-sort="payment">Payment</th><th scope="col" data-sort="status">Status</th><th scope="col"><span class="adm-sr">Actions</span></th></tr></thead>
               <tbody id="members-body"></tbody>
             </table>
           </div>
@@ -211,7 +312,7 @@
           <div class="adm-chips" id="d-chips" hidden></div>
           <div class="table-wrap adm-table-wrap">
             <table class="adm-table">
-              <thead><tr><th scope="col" data-sort="reference">Reference</th><th scope="col" data-sort="donor">Donor</th><th scope="col" data-sort="amount">Amount</th><th scope="col" data-sort="pledged">Pledged</th><th scope="col">Message</th><th scope="col" data-sort="status">Status</th><th scope="col"><span class="adm-sr">Actions</span></th></tr></thead>
+              <thead><tr><th scope="col" data-sort="reference">Reference</th><th scope="col" data-sort="donor">Donor</th><th scope="col" data-sort="amount">Amount</th><th scope="col" data-sort="pledged" class="col-pledged">Pledged</th><th scope="col" class="col-msg">Message</th><th scope="col" data-sort="status">Status</th><th scope="col"><span class="adm-sr">Actions</span></th></tr></thead>
               <tbody id="donations-body"></tbody>
             </table>
           </div>
@@ -343,6 +444,10 @@
         </section>
       </div>
     </main>
+    <footer class="adm-footer">
+      <span>© <span id="adm-year"></span> DCP UK · Democracy for the Citizens Party, United Kingdom chapter</span>
+      <a href="/" target="_blank" rel="noopener">View site <svg class="ic"><use href="#i-external"/></svg><span class="adm-sr">(opens in a new tab)</span></a>
+    </footer>
   </div>
 </div>
 
@@ -375,8 +480,58 @@
   </div>
 </dialog>
 
+<!-- ================================================================ Reason (reject / cancel) -->
+<dialog id="reason-dialog" class="adm-dialog adm-dialog-sm" aria-labelledby="rd-title">
+  <form id="rd-form" novalidate>
+    <div class="adm-dialog-head">
+      <div><h2 id="rd-title"></h2><p class="adm-muted" id="rd-sub"></p></div>
+      <button type="button" class="adm-icon-btn" id="rd-close" aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="adm-dialog-body">
+      <div class="adm-field">
+        <label for="rd-reason">Reason <span class="adm-muted">(required, added to the admin notes)</span></label>
+        <textarea id="rd-reason" name="reason" maxlength="500" required aria-describedby="rd-reason-err"></textarea>
+        <span class="adm-field-error" id="rd-reason-err" hidden></span>
+      </div>
+      <div class="adm-form-foot">
+        <button type="button" class="adm-btn adm-btn-ghost" id="rd-cancel">Keep as is</button>
+        <button type="submit" class="adm-btn adm-btn-danger-solid" id="rd-confirm"></button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<!-- ================================================================ Donation details -->
+<dialog id="donation-dialog" class="adm-dialog" aria-labelledby="dd-title">
+  <div class="adm-dialog-head">
+    <div><h2 id="dd-title"></h2><p class="adm-muted" id="dd-sub"></p></div>
+    <form method="dialog" class="dialog-close"><button class="adm-icon-btn" aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button></form>
+  </div>
+  <div class="adm-dialog-body">
+    <div class="form-alert" role="alert" hidden></div>
+    <dl class="adm-details" id="dd-details"></dl>
+    <form id="dd-form" novalidate>
+      <div class="adm-field"><label for="dd-notes">Admin notes</label><textarea id="dd-notes" name="adminNotes" maxlength="2000"></textarea></div>
+      <div class="adm-form-foot"><span></span><button type="submit" class="adm-btn adm-btn-primary">Save notes</button></div>
+    </form>
+  </div>
+</dialog>
+
+<!-- ================================================================ Profile -->
+<dialog id="profile-dialog" class="adm-dialog adm-dialog-sm" aria-labelledby="pf-title">
+  <div class="adm-dialog-head">
+    <div class="adm-profile-head"><span class="adm-avatar adm-avatar-lg" id="pf-avatar" aria-hidden="true"></span><div><h2 id="pf-title"></h2><p class="adm-muted">Administrator</p></div></div>
+    <form method="dialog" class="dialog-close"><button class="adm-icon-btn" aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button></form>
+  </div>
+  <div class="adm-dialog-body">
+    <dl class="adm-details" id="pf-details"></dl>
+    <div class="adm-form-foot"><span class="adm-muted">Roles arrive with the Finance module.</span><button type="button" class="adm-btn adm-btn-primary" id="pf-password"><svg class="ic"><use href="#i-key"/></svg>Change password</button></div>
+  </div>
+</dialog>
+
 <div class="adm-toasts" id="adm-toasts" aria-live="polite" aria-atomic="false"></div>
 
+<script src="vendor/apexcharts.min.js"></script>
 <script src="admin.js"></script>
 </body>
 </html>

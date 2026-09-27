@@ -7,7 +7,7 @@
   const PAYMENT_LABELS = { pending_payment: ['Not paid', 'bad'], payment_reported: ['Check payment', 'warn'], paid: ['Paid', 'good'] };
   const STATUS_LABELS = { pending: ['Pending', 'warn'], approved: ['Approved', 'good'], rejected: ['Rejected', 'bad'] };
   const DONATION_LABELS = { pledged: ['Pledged', 'warn'], received: ['Received', 'good'], cancelled: ['Cancelled', ''] };
-  const TAB_TITLES = { overview: 'Overview', members: 'Members', donations: 'Donations', accounts: 'Payment accounts', users: 'Admin users' };
+  const TAB_TITLES = { overview: 'Dashboard', members: 'Members', donations: 'Donations', accounts: 'Payment accounts', users: 'Admin users' };
 
   // ------------------------------------------------------------ helpers
 
@@ -64,7 +64,7 @@
 
   function toast(message, kind = 'success') {
     const node = el('div', { class: `adm-toast ${kind}`, role: kind === 'error' ? 'alert' : 'status' },
-      icon(kind === 'error' ? 'alert' : 'check'), el('p', { text: message }));
+      icon(kind === 'error' ? 'alert' : kind === 'info' ? 'info' : 'check'), el('p', { text: message }));
     const close = () => node.remove();
     node.append(iconButton('x', 'Dismiss notification', close));
     $('#adm-toasts').append(node);
@@ -241,6 +241,7 @@
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     if (openRowMenu) closeRowMenu(true);
+    else if (!bellMenu.hidden) closeBell(true);
     else if (!userMenu.hidden) closeUserMenu(true);
     else if (sidebar.classList.contains('open')) closeDrawer();
   });
@@ -310,51 +311,137 @@
   const showMembers = (filters = {}) => openTab('members', new URLSearchParams(filters));
   const showDonations = (status = '') => openTab('donations', new URLSearchParams(status ? { status } : {}));
 
-  // ------------------------------------------------------------ overview
+  // ------------------------------------------------------------ theme (light / dark)
+
+  // Default follows the device; the top-bar toggle saves an explicit choice.
+  const darkQuery = matchMedia('(prefers-color-scheme: dark)');
+  const currentTheme = () => document.documentElement.dataset.theme || (darkQuery.matches ? 'dark' : 'light');
+  function syncThemeButton() {
+    const dark = currentTheme() === 'dark';
+    const btn = $('#adm-theme');
+    btn.setAttribute('aria-label', dark ? 'Switch to light theme' : 'Switch to dark theme');
+    $('use', btn).setAttribute('href', dark ? '#i-sun' : '#i-moon');
+  }
+  $('#adm-theme').addEventListener('click', () => {
+    const next = currentTheme() === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    store.set('adm-theme', next);
+    syncThemeButton();
+    redrawCharts();
+  });
+  darkQuery.addEventListener('change', () => { if (!document.documentElement.dataset.theme) { syncThemeButton(); redrawCharts(); } });
+  syncThemeButton();
+
+  // ------------------------------------------------------------ charts (ApexCharts, themed from the DCP tokens)
+
+  const charts = {};
+  const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  function chartTheme() {
+    return {
+      primary: cssVar('--accent'), highlight: cssVar('--accent-light'), text: cssVar('--adm-text'),
+      muted: cssVar('--adm-muted'), border: cssVar('--adm-border'), dark: currentTheme() === 'dark',
+      font: getComputedStyle(document.body).fontFamily,
+      // Dark cards need the bright green for bars; the deep primary green disappears on them.
+      bar: currentTheme() === 'dark' ? cssVar('--accent-light') : cssVar('--accent'),
+      barSoft: currentTheme() === 'dark' ? 'rgba(87, 192, 101, 0.35)' : cssVar('--accent'),
+      barToday: currentTheme() === 'dark' ? cssVar('--accent-light') : cssVar('--accent-light'),
+      onBar: currentTheme() === 'dark' ? cssVar('--bg-dark-1') : '#ffffff',
+    };
+  }
+  // build(theme) returns ApexCharts options; kept so the chart can be redrawn on a theme change.
+  function drawChart(key, target, build) {
+    if (charts[key]) charts[key].chart.destroy();
+    if (!window.ApexCharts) { target.textContent = 'Charts could not be loaded.'; return; }
+    const chart = new window.ApexCharts(target, build(chartTheme()));
+    charts[key] = { chart, target, build };
+    chart.render();
+  }
+  function redrawCharts() {
+    for (const [key, { target, build }] of Object.entries(charts)) drawChart(key, target, build);
+  }
+  const baseChart = (t, extra) => ({
+    fontFamily: t.font, foreColor: t.muted, toolbar: { show: false }, zoom: { enabled: false },
+    animations: { enabled: !matchMedia('(prefers-reduced-motion: reduce)').matches, speed: 400 }, parentHeightOffset: 0, ...extra,
+  });
+
+  // ------------------------------------------------------------ dashboard
 
   function setNavBadges(s) {
-    const navBadge = $('#nav-badge-members');
-    navBadge.textContent = String(s.membersPending);
-    navBadge.hidden = !s.membersPending;
-    navBadge.setAttribute('aria-label', `${s.membersPending} awaiting review`);
+    const set = (id, n, label) => {
+      const b = $(id);
+      b.textContent = String(n);
+      b.hidden = !n;
+      b.setAttribute('aria-label', label);
+    };
+    set('#nav-badge-members', s.membersPending, `${s.membersPending} awaiting review`);
+    set('#nav-badge-donations', s.donationsPledged, `${s.donationsPledged} pledges awaiting transfer`);
   }
-  // Keeps sidebar counts current whichever section is open.
-  const refreshBadges = () => api('GET', '/api/admin/stats').then(setNavBadges).catch(() => {});
+  // Keeps sidebar counts and the bell current whichever section is open.
+  const refreshBadges = () => Promise.all([
+    api('GET', '/api/admin/stats').then(setNavBadges),
+    loadNotifications(),
+  ]).catch(() => {});
+
+  const weekday = (iso) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', timeZone: 'UTC' });
 
   async function loadOverview() {
-    $('#stats').replaceChildren(...Array.from({ length: 4 }, () => el('div', { class: 'adm-stat', 'aria-hidden': 'true' },
-      el('span', { class: 'adm-skel', style: 'width:42px;height:42px;border-radius:8px' }),
-      el('span', { class: 'adm-skel', style: 'width:40%;height:22px' }), el('span', { class: 'adm-skel', style: 'width:70%' }))));
+    const [d, cfg] = await Promise.all([api('GET', '/api/admin/dashboard'), api('GET', '/api/admin/settings')]);
 
-    const [s, cfg] = await Promise.all([api('GET', '/api/admin/stats'), api('GET', '/api/admin/settings')]);
+    // New members this week, with a change chip against last week.
+    const nm = d.newMembers;
+    $('#dash-new-n').textContent = String(nm.thisWeekTotal);
+    const change = nm.lastWeekTotal ? Math.round(((nm.thisWeekTotal - nm.lastWeekTotal) / nm.lastWeekTotal) * 100) : null;
+    const trend = change === null ? ['flat', 'new this week'] : change > 0 ? ['up', `+${change}%`] : change < 0 ? ['down', `${change}%`] : ['flat', '0%'];
+    $('#dash-new-sub').replaceChildren('Last 7 days', el('span', { class: `adm-chip-trend ${trend[0]}`, text: trend[1], title: `Previous 7 days: ${nm.lastWeekTotal}` }));
+    drawChart('new', $('#chart-new'), (t) => ({
+      chart: baseChart(t, { type: 'bar', height: 80, sparkline: { enabled: true } }),
+      series: [{ name: 'Registrations', data: nm.thisWeek.map((x) => x.n) }],
+      xaxis: { categories: nm.thisWeek.map((x) => weekday(x.date)) },
+      // Today's bar in the bright "UK" green, the rest in the primary green.
+      colors: nm.thisWeek.map((_, i) => (i === nm.thisWeek.length - 1 ? t.barToday : t.barSoft)),
+      plotOptions: { bar: { distributed: true, columnWidth: '55%', borderRadius: 3 } },
+      legend: { show: false },
+      tooltip: { theme: t.dark ? 'dark' : 'light', y: { title: { formatter: () => 'Registrations' } } },
+    }));
 
-    const card = ({ n, label, sub, iconName, tone, go }) => el('div', {
-      class: 'adm-stat', role: 'button', tabindex: '0', onclick: go,
-      onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } },
-    },
-      el('div', { class: 'adm-stat-top' }, el('span', { class: `adm-tile adm-tone-${tone}` }, icon(iconName)), icon('arrow-right', 'adm-go')),
-      el('div', {}, el('div', { class: 'adm-stat-n', text: String(n) }), el('div', { class: 'adm-stat-l', text: label })),
-      el('div', { class: 'adm-stat-sub', text: sub }),
+    $('#dash-pending-n').textContent = String(d.membersPending);
+    $('#dash-verify-n').textContent = String(d.paymentsToCheck);
+
+    // Members by chapter
+    $('#dash-chapter-sub').textContent = `${d.members} registered in ${d.byChapter.length} ${d.byChapter.length === 1 ? 'group' : 'groups'}`;
+    drawChart('chapters', $('#chart-chapters'), (t) => ({
+      chart: baseChart(t, { type: 'bar', height: Math.max(220, d.byChapter.length * 30 + 40) }),
+      series: [{ name: 'Members', data: d.byChapter.map((c) => c.n) }],
+      xaxis: { categories: d.byChapter.map((c) => c.chapter), labels: { style: { colors: t.muted } }, axisBorder: { show: false }, axisTicks: { show: false } },
+      yaxis: { labels: { style: { colors: t.text, fontSize: '13px' } } },
+      colors: [t.bar],
+      plotOptions: { bar: { horizontal: true, barHeight: '60%', borderRadius: 4, borderRadiusApplication: 'end' } },
+      grid: { borderColor: t.border, strokeDashArray: 4, xaxis: { lines: { show: true } }, yaxis: { lines: { show: false } }, padding: { left: 4, right: 12 } },
+      dataLabels: { enabled: true, style: { fontSize: '12px', colors: [t.onBar] }, offsetX: -4 },
+      tooltip: { theme: t.dark ? 'dark' : 'light' },
+    }));
+
+    // Recent registrations
+    $('#dash-recent').replaceChildren(...(d.recentRegistrations.length ? d.recentRegistrations.map((m) => el('li', {},
+      el('button', { type: 'button', onclick: () => openMember(m.id) },
+        el('span', { class: 'adm-avatar', 'aria-hidden': 'true', text: initials(m.full_name.replace(/\s+/g, '.')) }),
+        el('span', { class: 'adm-list-main' }, el('strong', { text: m.full_name }), el('span', { text: `${m.chapter || 'No chapter'} · ${day(m.created_at)}` })),
+        badge(STATUS_LABELS[m.status])))) : [el('li', { class: 'adm-muted', text: 'No registrations yet.' })]));
+
+    // Activation funnel: the later steps arrive with member logins.
+    const step = (label, n, pct, note, pending) => el('li', { class: pending ? 'pending' : '' },
+      el('div', { class: 'adm-funnel-top' }, el('span', { class: 'adm-funnel-label', text: label }), el('span', { class: 'adm-funnel-n', text: pending ? '—' : String(n) })),
+      el('div', { class: 'adm-funnel-bar', role: 'img', 'aria-label': pending ? `${label}: not available yet` : `${label}: ${n} (${pct}%)` }, el('span', { style: `width:${pending ? 0 : pct}%` })),
+      el('span', { class: 'adm-funnel-note', text: note }));
+    const approvedPct = d.members ? Math.round((d.membersApproved / d.members) * 100) : 0;
+    $('#dash-funnel').replaceChildren(
+      step('Registered', d.members, d.members ? 100 : 0, 'Everyone who has applied'),
+      step('Approved', d.membersApproved, approvedPct, `${approvedPct}% of registrations`),
+      step('Activated', 0, 0, 'Available once member logins are set up', true),
+      step('Logged in', 0, 0, 'Available once member logins are set up', true),
     );
-    $('#stats').replaceChildren(
-      card({ n: s.members, label: 'Registered members', sub: `${s.membersApproved} approved so far`, iconName: 'users', tone: 'primary', go: () => showMembers() }),
-      card({ n: s.membersPending, label: 'Awaiting review', sub: 'Applications to approve or reject', iconName: 'clock', tone: 'warning', go: () => showMembers({ status: 'pending' }) }),
-      card({ n: s.paymentsToCheck, label: 'Fee payments to check', sub: 'Members who say they have paid', iconName: 'cash', tone: 'bright', go: () => showMembers({ payment: 'payment_reported' }) }),
-      card({ n: gbp(s.donationsReceivedGbp), label: 'Donations received', sub: `${plural(s.donationsPledged, 'pledge')} awaiting transfer`, iconName: 'heart', tone: 'danger', go: () => showDonations() }),
-    );
 
-    setNavBadges(s);
-
-    const attention = [
-      { n: s.membersPending, title: 'Review new applications', text: 'Approve or reject pending registrations.', iconName: 'clock', tone: 'warning', go: () => showMembers({ status: 'pending' }) },
-      { n: s.paymentsToCheck, title: 'Confirm fee payments', text: 'Match reported M-Pesa or bank codes, then mark them paid.', iconName: 'cash', tone: 'bright', go: () => showMembers({ payment: 'payment_reported' }) },
-      { n: s.donationsPledged, title: 'Match donation pledges', text: 'Mark pledges received once the transfer arrives.', iconName: 'heart', tone: 'danger', go: () => showDonations('pledged') },
-    ];
-    $('#attention').replaceChildren(...attention.map((a) => el('li', {}, el('button', { type: 'button', onclick: a.go },
-      el('span', { class: `adm-tile adm-tone-${a.tone}` }, icon(a.iconName)),
-      el('span', { class: 'adm-attn-text' }, el('strong', { text: a.title }), el('span', { text: a.text })),
-      el('span', { class: 'adm-attn-count', text: String(a.n) }), icon('chevron-right', 'adm-go')))));
-
+    // Setup reminder
     const missing = [];
     if (!cfg.feeAccount.configured) missing.push('the membership fee account (applicants are told the chapter will contact them)');
     if (!cfg.donationAccount.configured) missing.push('the donations bank account (the Donate page is closed until you do)');
@@ -366,6 +453,224 @@
         el('a', { href: '#accounts', text: 'Open Payment accounts', onclick: (e) => { e.preventDefault(); openTab('accounts'); } })),
       iconButton('x', 'Dismiss reminder', () => { reminder.hidden = true; store.session(dismissKey, '1'); }));
   }
+
+  const onActivate = (node, fn) => {
+    node.addEventListener('click', fn);
+    node.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fn(); } });
+  };
+  onActivate($('#dash-pending'), () => showMembers({ status: 'pending' }));
+  onActivate($('#dash-verify'), () => showMembers({ payment: 'payment_reported' }));
+  $('#dash-recent-all').addEventListener('click', () => showMembers());
+
+  // Sections that arrive in later updates.
+  $$('.adm-nav [data-soon]').forEach((b) => b.addEventListener('click', () => toast(`${b.querySelector('.adm-nav-label').textContent} arrives with ${b.dataset.soon}.`, 'info')));
+
+  // ------------------------------------------------------------ global search (Ctrl/⌘ K)
+
+  const gsearch = $('#adm-gsearch');
+  const gInput = $('#adm-gsearch-input');
+  const gList = $('#adm-gsearch-list');
+  const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  $('#adm-gsearch-kbd').textContent = isMac ? '⌘ K' : 'Ctrl K';
+  let gResults = [];
+  let gActive = -1;
+  let gSeq = 0;
+
+  function closeSearch() {
+    gList.hidden = true;
+    gInput.setAttribute('aria-expanded', 'false');
+    gInput.removeAttribute('aria-activedescendant');
+    gActive = -1;
+  }
+  function setActive(i) {
+    gActive = i;
+    $$('.adm-gsearch-item', gList).forEach((node, j) => node.setAttribute('aria-selected', String(j === i)));
+    if (i >= 0) { gInput.setAttribute('aria-activedescendant', `gs-${i}`); $(`#gs-${i}`).scrollIntoView({ block: 'nearest' }); }
+  }
+  function chooseResult(i) {
+    const r = gResults[i];
+    if (!r) return;
+    closeSearch();
+    gInput.value = '';
+    gsearch.classList.remove('open');
+    r.go();
+  }
+  const runSearch = debounce(async () => {
+    const q = gInput.value.trim();
+    const mySeq = ++gSeq;
+    if (q.length < 2) { closeSearch(); return; }
+    const res = await api('GET', `/api/admin/search?q=${encodeURIComponent(q)}`).catch(() => null);
+    if (mySeq !== gSeq || !res) return;
+    gResults = [
+      ...res.members.map((m) => ({ group: 'Members', iconName: 'users', title: m.full_name, meta: `${m.reference} · ${m.email}`, go: () => openMember(m.id) })),
+      ...res.donations.map((d) => ({ group: 'Donations', iconName: 'heart', title: `${d.full_name} · ${gbp(d.amount_gbp)}`, meta: `${d.reference} · ${DONATION_LABELS[d.status]?.[0] || d.status}`, go: () => openDonationById(d.id) })),
+      ...res.admins.map((a) => ({ group: 'Admins', iconName: 'shield', title: a.username, meta: 'Admin user', go: () => openTab('users', new URLSearchParams({ q: a.username })) })),
+    ];
+    const nodes = [];
+    let group = null;
+    gResults.forEach((r, i) => {
+      if (r.group !== group) { group = r.group; nodes.push(el('p', { class: 'adm-gsearch-group', 'aria-hidden': 'true', text: group })); }
+      nodes.push(el('div', { class: 'adm-gsearch-item', role: 'option', id: `gs-${i}`, 'aria-selected': 'false', onmousedown: (e) => { e.preventDefault(); chooseResult(i); } },
+        icon(r.iconName), el('div', {}, el('strong', { text: r.title }), el('span', { text: r.meta }))));
+    });
+    gList.replaceChildren(...(nodes.length ? nodes : [el('p', { class: 'adm-gsearch-empty', text: `Nothing matches “${q}”.` })]));
+    gList.hidden = false;
+    gInput.setAttribute('aria-expanded', 'true');
+    setActive(gResults.length ? 0 : -1);
+  }, 200);
+  gInput.addEventListener('input', runSearch);
+  gInput.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      if (!gResults.length || gList.hidden) return;
+      e.preventDefault();
+      setActive((gActive + (e.key === 'ArrowDown' ? 1 : gResults.length - 1)) % gResults.length);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (gActive >= 0) chooseResult(gActive);
+    } else if (e.key === 'Escape') {
+      e.stopPropagation();
+      if (!gList.hidden) closeSearch(); else { gInput.blur(); gsearch.classList.remove('open'); }
+    }
+  });
+  gInput.addEventListener('blur', () => setTimeout(closeSearch, 120));
+  $('#adm-search-open').addEventListener('click', () => { gsearch.classList.add('open'); gInput.focus(); });
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && !$('#view-app').hidden) {
+      e.preventDefault();
+      gsearch.classList.add('open');
+      gInput.focus();
+      gInput.select();
+    }
+  });
+
+  // ------------------------------------------------------------ notifications bell
+
+  const bellBtn = $('#adm-bell-btn');
+  const bellMenu = $('#adm-bell-menu');
+  async function loadNotifications() {
+    const n = await api('GET', '/api/admin/notifications');
+    const count = n.pending + n.paymentsToCheck;
+    const badgeEl = $('#adm-bell-count');
+    badgeEl.textContent = count > 99 ? '99+' : String(count);
+    badgeEl.hidden = !count;
+    bellBtn.setAttribute('aria-label', count ? `Notifications: ${count} waiting` : 'Notifications');
+    $('#adm-bell-summary').textContent = `${count} to review`;
+    const item = (tone, iconName, title, meta, go) => el('button', { type: 'button', onclick: () => { closeBell(); go(); } },
+      el('span', { class: `adm-tile adm-tone-${tone}`, 'aria-hidden': 'true' }, icon(iconName)),
+      el('span', {}, el('strong', { text: title }), el('span', { class: 'adm-bell-meta', text: meta })));
+    const items = [];
+    if (n.paymentsToCheck) items.push(item('bright', 'cash', `${plural(n.paymentsToCheck, 'payment')} to verify`, 'Members who say they have paid', () => showMembers({ payment: 'payment_reported' })));
+    for (const m of n.newRegistrations) items.push(item('warning', 'user-plus', `New registration: ${m.full_name}`, `${m.chapter || 'No chapter'} · ${when(m.created_at)}`, () => openMember(m.id)));
+    if (n.pending > n.newRegistrations.length) items.push(item('primary', 'users', `All ${n.pending} pending applications`, 'Open the Members list', () => showMembers({ status: 'pending' })));
+    if (n.donationsPledged) items.push(item('danger', 'heart', `${plural(n.donationsPledged, 'pledge')} awaiting transfer`, 'Mark them received when the money arrives', () => showDonations('pledged')));
+    $('#adm-bell-list').replaceChildren(...(items.length ? items : [el('p', { class: 'adm-bell-empty', text: 'Nothing waiting. All caught up.' })]));
+  }
+  function closeBell(returnFocus = false) {
+    if (bellMenu.hidden) return;
+    bellMenu.hidden = true;
+    bellBtn.setAttribute('aria-expanded', 'false');
+    if (returnFocus) bellBtn.focus();
+  }
+  bellBtn.addEventListener('click', () => {
+    const open = bellMenu.hidden;
+    closeUserMenu();
+    bellMenu.hidden = !open;
+    bellBtn.setAttribute('aria-expanded', String(open));
+    if (open) { loadNotifications().catch(() => {}); $('button', bellMenu)?.focus(); }
+  });
+  document.addEventListener('click', (e) => { if (!e.target.closest('.adm-bell')) closeBell(); });
+  setInterval(() => { if (!$('#view-app').hidden && !document.hidden) refreshBadges(); }, 60000);
+
+  // ------------------------------------------------------------ profile
+
+  $('#adm-profile').addEventListener('click', async () => {
+    closeUserMenu();
+    const me = $('#who').textContent;
+    const pf = $('#profile-dialog');
+    $('#pf-title').textContent = me;
+    $('#pf-avatar').textContent = initials(me);
+    const dl = $('#pf-details');
+    dl.replaceChildren();
+    row(dl, 'Email (sign-in)', me);
+    try {
+      const { admins } = await api('GET', `/api/admin/admins?q=${encodeURIComponent(me)}`);
+      const self = admins.find((a) => a.username === me);
+      if (self) row(dl, 'Admin since', when(self.created_at));
+    } catch { /* details are optional */ }
+    row(dl, 'Session', 'Signs out after 8 hours');
+    pf.showModal();
+  });
+  $('#pf-password').addEventListener('click', () => { $('#profile-dialog').close(); openTab('users'); $('#p-cur').focus(); });
+
+  // ------------------------------------------------------------ reason dialog (reject / cancel)
+
+  // Resolves with the typed reason, or null if the admin backs out.
+  function askReason({ title, sub, confirm }) {
+    const dlg = $('#reason-dialog');
+    const input = $('#rd-reason');
+    $('#rd-title').textContent = title;
+    $('#rd-sub').textContent = sub;
+    $('#rd-confirm').textContent = confirm;
+    input.value = '';
+    fieldError(input, '');
+    dlg.showModal();
+    input.focus();
+    return new Promise((resolve) => {
+      const finish = (value) => {
+        $('#rd-form').removeEventListener('submit', onSubmit);
+        dlg.removeEventListener('close', onClose);
+        if (dlg.open) dlg.close();
+        resolve(value);
+      };
+      const onSubmit = (e) => {
+        e.preventDefault();
+        const reason = input.value.trim();
+        if (!reason) { fieldError(input, 'Enter a reason.'); input.focus(); return; }
+        finish(reason);
+      };
+      const onClose = () => finish(null);
+      $('#rd-form').addEventListener('submit', onSubmit);
+      dlg.addEventListener('close', onClose);
+    });
+  }
+  $('#rd-cancel').addEventListener('click', () => $('#reason-dialog').close());
+  $('#rd-close').addEventListener('click', () => $('#reason-dialog').close());
+  $('#rd-reason').addEventListener('input', (e) => fieldError(e.currentTarget, ''));
+
+  // ------------------------------------------------------------ donation details
+
+  const donationDialog = $('#donation-dialog');
+  let currentDonation = null;
+  function openDonation(d) {
+    currentDonation = d;
+    $('#dd-title').textContent = d.full_name;
+    $('#dd-sub').textContent = `${d.reference} · pledged ${when(d.created_at)}`;
+    const dl = $('#dd-details');
+    dl.replaceChildren();
+    row(dl, 'Email', d.email);
+    row(dl, 'Amount', `${gbp(d.amount_gbp)} (${d.frequency === 'monthly' ? 'monthly' : 'one-off'})`);
+    row(dl, 'Status', DONATION_LABELS[d.status]?.[0] || d.status);
+    row(dl, 'Message', d.message);
+    row(dl, 'Last updated', when(d.updated_at));
+    $('#dd-notes').value = d.admin_notes || '';
+    alertIn(donationDialog, '');
+    donationDialog.showModal();
+  }
+  async function openDonationById(id) {
+    try { openDonation((await api('GET', `/api/admin/donations/${id}`)).donation); } catch (err) { toast(err.message, 'error'); }
+  }
+  $('#dd-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.currentTarget;
+    try {
+      await busy(f, () => api('PATCH', `/api/admin/donations/${currentDonation.id}`, { adminNotes: f.elements.adminNotes.value }));
+      donationDialog.close();
+      toast(`Notes saved for ${currentDonation.reference}.`);
+      tables.donations.load().catch(() => {});
+    } catch (err) { alertIn(donationDialog, err.message); }
+  });
+
+  $('#adm-year').textContent = String(new Date().getFullYear());
 
   // ------------------------------------------------------------ tables: server-side paging, sorting, filters
 
@@ -612,6 +917,11 @@
     } catch (err) { toast(err.message, 'error'); }
   }
 
+  async function rejectMember(m) {
+    const reason = await askReason({ title: `Reject ${m.full_name}?`, sub: `${m.reference}. The reason is added to the admin notes.`, confirm: 'Reject application' });
+    if (reason) updateMember(m, { status: 'rejected', reason }, 'rejected');
+  }
+
   function memberRow(m) {
     return el('tr', {
       class: 'clickable', tabindex: '0',
@@ -621,16 +931,16 @@
       el('td', { class: 'mono col-ref', text: m.reference }),
       el('td', {}, el('div', { class: 'adm-person' }, el('span', { class: 'adm-avatar', 'aria-hidden': 'true', text: initials(m.full_name.replace(/\s+/g, '.')) }),
         el('div', {}, el('strong', { text: m.full_name }), el('span', { class: 'sub ref-sub', text: m.reference }), m.possible_duplicates ? el('span', { class: 'sub warn', text: '⚠ possible duplicate' }) : null))),
-      el('td', {}, el('div', {}, el('span', { class: 'adm-email', title: m.email, text: m.email }), el('span', { class: 'sub', text: m.phone }))),
+      el('td', { class: 'col-contact' }, el('div', {}, el('span', { class: 'adm-email', title: m.email, text: m.email }), el('span', { class: 'sub', text: m.phone }))),
       el('td', { text: m.chapter || '—' }),
-      el('td', { class: 'when', title: when(m.created_at), text: day(m.created_at) }),
+      el('td', { class: 'when col-reg', title: when(m.created_at), text: day(m.created_at) }),
       el('td', {}, badge(PAYMENT_LABELS[m.payment_status])),
       el('td', {}, badge(STATUS_LABELS[m.status])),
       el('td', { class: 'actions' }, rowMenu(`Actions for ${m.full_name}`, [
         { icon: 'eye', text: 'View details', onClick: () => openMember(m.id) },
         m.status !== 'approved' && { icon: 'check', text: 'Approve', onClick: () => updateMember(m, { status: 'approved' }, 'approved') },
         m.payment_status !== 'paid' && { icon: 'cash', text: 'Mark fee paid', onClick: () => updateMember(m, { paymentStatus: 'paid' }, 'marked as paid') },
-        m.status !== 'rejected' && { icon: 'x', text: 'Reject', danger: true, onClick: () => updateMember(m, { status: 'rejected' }, 'rejected') },
+        m.status !== 'rejected' && { icon: 'x', text: 'Reject', danger: true, onClick: () => rejectMember(m) },
       ])),
     );
   }
@@ -677,11 +987,17 @@
   $('#md-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = e.currentTarget;
+    const values = formValues(f);
+    if (values.status === 'rejected' && currentMember.status !== 'rejected') {
+      values.reason = await askReason({ title: `Reject ${currentMember.full_name}?`, sub: `${currentMember.reference}. The reason is added to the admin notes.`, confirm: 'Reject application' });
+      if (!values.reason) return;
+    }
     try {
-      await busy(f, () => api('PATCH', `/api/admin/members/${currentMember.id}`, formValues(f)));
+      await busy(f, () => api('PATCH', `/api/admin/members/${currentMember.id}`, values));
       dialog.close();
       toast(`Saved changes for ${currentMember.full_name}.`);
       tables.members.load().catch((err) => toast(err.message, 'error'));
+      refreshBadges();
     } catch (err) { alertIn(dialog, err.message); }
   });
 
@@ -699,22 +1015,33 @@
   // ------------------------------------------------------------ donations
 
   async function setDonationStatus(d, status) {
+    const change = { status };
+    if (status === 'cancelled') {
+      change.reason = await askReason({ title: `Cancel pledge ${d.reference}?`, sub: `${d.full_name}, ${gbp(d.amount_gbp)}. The reason is added to the admin notes.`, confirm: 'Cancel pledge' });
+      if (!change.reason) return;
+    }
     try {
-      await api('PATCH', `/api/admin/donations/${d.id}`, { status });
+      await api('PATCH', `/api/admin/donations/${d.id}`, change);
       toast(`${d.reference} marked ${DONATION_LABELS[status][0].toLowerCase()}.`);
       tables.donations.load();
+      refreshBadges();
     } catch (err) { toast(err.message, 'error'); }
   }
 
   function donationRow(d) {
-    return el('tr', {},
+    return el('tr', {
+      class: 'clickable', tabindex: '0',
+      onclick: () => openDonation(d),
+      onkeydown: (e) => { if (e.key === 'Enter' && e.target === e.currentTarget) openDonation(d); },
+    },
       el('td', { class: 'mono', text: d.reference }),
       el('td', {}, el('div', {}, el('strong', { text: d.full_name }), el('span', { class: 'sub adm-email', title: d.email, text: d.email }))),
       el('td', { class: 'amount' }, el('div', {}, gbp(d.amount_gbp), el('span', { class: 'sub', text: d.frequency === 'monthly' ? 'monthly' : 'one-off' }))),
-      el('td', { class: 'when', title: when(d.created_at), text: day(d.created_at) }),
-      el('td', { class: 'msg', text: d.message || '—' }),
+      el('td', { class: 'when col-pledged', title: when(d.created_at), text: day(d.created_at) }),
+      el('td', { class: 'msg col-msg', text: d.message || '—' }),
       el('td', {}, badge(DONATION_LABELS[d.status] || [d.status, ''])),
       el('td', { class: 'actions' }, rowMenu(`Actions for ${d.reference}`, [
+        { icon: 'eye', text: 'View details', onClick: () => openDonation(d) },
         d.status !== 'received' && { icon: 'check', text: 'Mark received', onClick: () => setDonationStatus(d, 'received') },
         d.status !== 'pledged' && { icon: 'rotate', text: 'Back to pledged', onClick: () => setDonationStatus(d, 'pledged') },
         d.status !== 'cancelled' && { icon: 'x', text: 'Cancel pledge', danger: true, onClick: () => setDonationStatus(d, 'cancelled') },

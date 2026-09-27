@@ -240,6 +240,58 @@ function saveAccount(key, validator) {
 adminApi.put('/settings/fee-account', saveAccount('feeAccount', settings.validateFeeAccount));
 adminApi.put('/settings/donation-account', saveAccount('donationAccount', settings.validateDonationAccount));
 
+// ---------------------------------------------------------------- admin: dashboard, search, notifications
+
+const isoDay = (d) => d.toISOString().slice(0, 10);
+
+adminApi.get('/dashboard', async (req, res) => {
+  const n = async (sql, params = []) => Number((await db.one(sql, params)).n);
+  // Registrations per day for the last 14 days (UTC), oldest first.
+  const rows = await db.query(`SELECT DATE_FORMAT(created_at, '%Y-%m-%d') AS d, COUNT(*) AS n FROM members
+    WHERE created_at >= UTC_DATE() - INTERVAL 13 DAY GROUP BY d`);
+  const byDay = Object.fromEntries(rows.map((r) => [r.d, Number(r.n)]));
+  const days = Array.from({ length: 14 }, (_, i) => isoDay(new Date(Date.now() - (13 - i) * 86400000)));
+  const daily = days.map((d) => ({ date: d, n: byDay[d] || 0 }));
+  res.json({
+    newMembers: { thisWeek: daily.slice(7), thisWeekTotal: daily.slice(7).reduce((s, x) => s + x.n, 0), lastWeekTotal: daily.slice(0, 7).reduce((s, x) => s + x.n, 0) },
+    members: await n('SELECT COUNT(*) AS n FROM members'),
+    membersApproved: await n("SELECT COUNT(*) AS n FROM members WHERE status = 'approved'"),
+    membersPending: await n("SELECT COUNT(*) AS n FROM members WHERE status = 'pending'"),
+    paymentsToCheck: await n("SELECT COUNT(*) AS n FROM members WHERE payment_status = 'payment_reported'"),
+    byChapter: (await db.query("SELECT COALESCE(chapter, 'Not given') AS chapter, COUNT(*) AS n FROM members GROUP BY chapter ORDER BY n DESC, chapter"))
+      .map((r) => ({ chapter: r.chapter, n: Number(r.n) })),
+    recentRegistrations: await db.query(`SELECT id, reference, full_name, email, chapter, status, payment_status, created_at
+      FROM members ORDER BY created_at DESC, id DESC LIMIT 6`),
+  });
+});
+
+// Top-bar search across members, donations and admins (5 of each).
+adminApi.get('/search', async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) return res.json({ members: [], donations: [], admins: [] });
+  const like = likeParam(q);
+  res.json({
+    members: await db.query(`SELECT id, reference, full_name, email, status FROM members
+      WHERE full_name LIKE ? OR email LIKE ? OR reference LIKE ? OR phone LIKE ? OR postcode LIKE ?
+      ORDER BY created_at DESC LIMIT 5`, [like, like, like, like, like]),
+    donations: await db.query(`SELECT id, reference, full_name, amount_gbp, status FROM donations
+      WHERE full_name LIKE ? OR email LIKE ? OR reference LIKE ? ORDER BY created_at DESC LIMIT 5`, [like, like, like]),
+    admins: await db.query('SELECT id, username FROM admins WHERE username LIKE ? ORDER BY username LIMIT 5', [like]),
+  });
+});
+
+// The bell: things waiting on an admin.
+adminApi.get('/notifications', async (req, res) => {
+  const n = async (sql) => Number((await db.one(sql)).n);
+  res.json({
+    pending: await n("SELECT COUNT(*) AS n FROM members WHERE status = 'pending'"),
+    paymentsToCheck: await n("SELECT COUNT(*) AS n FROM members WHERE payment_status = 'payment_reported'"),
+    donationsPledged: await n("SELECT COUNT(*) AS n FROM donations WHERE status = 'pledged'"),
+    newRegistrations: await db.query(`SELECT id, reference, full_name, chapter, created_at FROM members
+      WHERE status = 'pending' ORDER BY created_at DESC LIMIT 5`),
+  });
+});
+
 // ---------------------------------------------------------------- admin: members
 
 const MEMBER_STATUSES = ['pending', 'approved', 'rejected'];
@@ -321,19 +373,35 @@ adminApi.get('/members/:id', async (req, res) => {
   res.json({ member });
 });
 
+// Rejecting a member or cancelling a pledge needs a reason. It is added to the
+// record's admin notes with who and when (and to the audit log once that exists).
+function reasonNote(verb, admin, reason) {
+  const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  return `[${stamp} UTC] ${verb} by ${admin}: ${reason}`;
+}
+const cleanReason = (r) => String(r || '').trim().slice(0, 500);
+
 adminApi.patch('/members/:id', async (req, res) => {
   const b = req.body || {};
   const updates = [];
   const params = [];
+  const current = await db.one('SELECT status, admin_notes FROM members WHERE id = ?', [Number(req.params.id) || 0]);
+  if (!current) return res.status(404).json({ error: 'Member not found.' });
+  let notes = b.adminNotes !== undefined ? String(b.adminNotes).slice(0, 2000) : undefined;
   if (b.status !== undefined) {
     if (!MEMBER_STATUSES.includes(b.status)) return res.status(400).json({ error: 'Unknown status.' });
+    if (b.status === 'rejected' && current.status !== 'rejected') {
+      const reason = cleanReason(b.reason);
+      if (!reason) return res.status(400).json({ error: 'Give a reason for rejecting this application.' });
+      notes = [notes ?? current.admin_notes, reasonNote('Rejected', req.admin.username, reason)].filter(Boolean).join('\n');
+    }
     updates.push('status = ?'); params.push(b.status);
   }
   if (b.paymentStatus !== undefined) {
     if (!PAYMENT_STATUSES.includes(b.paymentStatus)) return res.status(400).json({ error: 'Unknown payment status.' });
     updates.push('payment_status = ?'); params.push(b.paymentStatus);
   }
-  if (b.adminNotes !== undefined) { updates.push('admin_notes = ?'); params.push(String(b.adminNotes).slice(0, 2000) || null); }
+  if (notes !== undefined) { updates.push('admin_notes = ?'); params.push(notes.slice(-4000) || null); }
   if (!updates.length) return res.status(400).json({ error: 'Nothing to update.' });
   const result = await db.query(`UPDATE members SET ${updates.join(', ')}, updated_at = UTC_TIMESTAMP() WHERE id = ?`, [...params, Number(req.params.id) || 0]);
   if (!result.affectedRows) return res.status(404).json({ error: 'Member not found.' });
@@ -389,15 +457,29 @@ adminApi.get('/donations.csv', async (req, res) => {
   ], await donationQuery(req.query));
 });
 
+adminApi.get('/donations/:id', async (req, res) => {
+  const donation = await db.one('SELECT * FROM donations WHERE id = ?', [Number(req.params.id) || 0]);
+  if (!donation) return res.status(404).json({ error: 'Donation not found.' });
+  res.json({ donation });
+});
+
 adminApi.patch('/donations/:id', async (req, res) => {
   const b = req.body || {};
   const updates = [];
   const params = [];
+  const current = await db.one('SELECT status, admin_notes FROM donations WHERE id = ?', [Number(req.params.id) || 0]);
+  if (!current) return res.status(404).json({ error: 'Donation not found.' });
+  let notes = b.adminNotes !== undefined ? String(b.adminNotes).slice(0, 2000) : undefined;
   if (b.status !== undefined) {
     if (!DONATION_STATUSES.includes(b.status)) return res.status(400).json({ error: 'Unknown status.' });
+    if (b.status === 'cancelled' && current.status !== 'cancelled') {
+      const reason = cleanReason(b.reason);
+      if (!reason) return res.status(400).json({ error: 'Give a reason for cancelling this pledge.' });
+      notes = [notes ?? current.admin_notes, reasonNote('Cancelled', req.admin.username, reason)].filter(Boolean).join('\n');
+    }
     updates.push('status = ?'); params.push(b.status);
   }
-  if (b.adminNotes !== undefined) { updates.push('admin_notes = ?'); params.push(String(b.adminNotes).slice(0, 2000) || null); }
+  if (notes !== undefined) { updates.push('admin_notes = ?'); params.push(notes.slice(-4000) || null); }
   if (!updates.length) return res.status(400).json({ error: 'Nothing to update.' });
   const result = await db.query(`UPDATE donations SET ${updates.join(', ')}, updated_at = UTC_TIMESTAMP() WHERE id = ?`, [...params, Number(req.params.id) || 0]);
   if (!result.affectedRows) return res.status(404).json({ error: 'Donation not found.' });
@@ -409,6 +491,16 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'Not found.' }));
 
 // ---------------------------------------------------------------- static files
 
+const VENDOR_FILES = {
+  'apexcharts.min.js': require.resolve('apexcharts/dist/apexcharts.min.js'),
+  'inter-latin.woff2': require.resolve('@fontsource-variable/inter/files/inter-latin-wght-normal.woff2'),
+};
+app.get('/admin/vendor/:file', (req, res, next) => {
+  const file = VENDOR_FILES[req.params.file];
+  if (!file) return next();
+  res.set({ 'Cache-Control': 'public, max-age=604800', 'X-Robots-Tag': 'noindex, nofollow' });
+  res.sendFile(file);
+});
 app.use('/admin', (req, res, next) => { res.set({ 'X-Robots-Tag': 'noindex, nofollow', 'Cache-Control': 'no-store' }); next(); },
   express.static(ADMIN_DIR));
 app.use('/shared', express.static(SHARED_DIR));
